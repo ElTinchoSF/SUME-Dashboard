@@ -1,0 +1,161 @@
+# Informe ISO 9001: Análisis de Circuitos Administrativos SUME - FBCB UNL
+
+**Versión:** {{ version }}
+**Fecha de generación:** {{ generated_at }}
+**Filtro de conceptos:** {% if conceptos_filter %}{{ conceptos_filter | join(', ') }}{% else %}Todos{% endif %}
+
+---
+
+## 1. Resumen Ejecutivo
+
+Este informe presenta el análisis de circuitos administrativos del sistema SUME (Sistema Unificado de Mesa de Entradas) para la Facultad de Ciencias Bioquímicas y Biológicas (FBCB) de la Universidad Nacional del Litoral (UNL), correspondiente al período analizado.
+
+### Alcance
+- **Conceptos analizados:** {{ concept_summaries | length }}
+- **Total de expedientes:** {{ concept_summaries.values() | sum(attribute='total_expedientes') }}
+- **Circuitos únicos identificados:** {{ circuitos | length }}
+- **Circuitos modales (más frecuentes):** {{ modal_circuits | length }}
+
+### Hallazgos Principales
+{% for concepto, summary in concept_summaries.items() %}
+- **{{ concepto }}:** {{ summary.total_expedientes }} expedientes, {{ summary.unique_circuits }} circuitos únicos{% if summary.modal_circuit %}, circuito modal: {{ summary.modal_circuit.circuito | join(' → ') }} ({{ summary.modal_circuit.frecuencia }}/{{ summary.modal_circuit.total_concepto }}){% endif %}
+{% endfor %}
+
+---
+
+## 2. Distribución de Expedientes por Concepto
+
+| Concepto | Cantidad | Porcentaje |
+|----------|----------|------------|
+{% for row in concept_distribution %}
+| {{ row.concepto }} | {{ row.cantidad | format_number }} | {{ row.porcentaje | format_pct }} |
+{% endfor %}
+| **Total** | **{{ concept_distribution | sum(attribute='cantidad') | format_number }}** | **100%** |
+
+---
+
+## 3. Análisis de Circuitos por Concepto
+
+{% for concepto, summary in concept_summaries.items() %}
+### 3.{{ loop.index }} {{ concepto }}
+
+**Total expedientes:** {{ summary.total_expedientes }}
+**Período:** {{ summary.primera_fecha }} a {{ summary.ultima_fecha }}
+**Circuitos únicos:** {{ summary.unique_circuits }}
+
+#### Circuito Modal
+{% if summary.modal_circuit %}
+| Paso | Dependencia |
+|------|-------------|
+{% for i, dep in enumerate(summary.modal_circuit.circuito) %}
+| {{ i }} | {{ dep }} |
+{% endfor %}
+**Frecuencia:** {{ summary.modal_circuit.frecuencia }} / {{ summary.modal_circuit.total_concepto }} ({{ (summary.modal_circuit.frecuencia / summary.modal_circuit.total_concepto * 100) | round2 }}%)
+{% else %}
+_No se identificó circuito modal (muestra insuficiente)_
+{% endif %}
+
+#### Todos los Circuitos Identificados
+| # | Circuito | Frecuencia | % del Concepto | Modal |
+|---|----------|------------|----------------|-------|
+{% set concept_circuits = circuitos | selectattr('concepto', 'equalto', concepto) | list %}
+{% for i, circuit in enumerate(concept_circuits) %}
+| {{ i + 1 }} | {{ circuit.circuito_json | from_json | join(' → ') }} | {{ circuit.frecuencia | format_number }} | {{ (circuit.frecuencia / summary.total_expedientes * 100) | round2 }}% | {% if circuit.es_mas_frecuente %}✅{% else %}{% endif %} |
+{% endfor %}
+
+---
+{% endfor %}
+
+---
+
+## 4. Estadísticas de Pasos por Concepto
+
+| Concepto | Mín | Máx | Media | Mediana | Moda | Desv. Est. | Circuitos Únicos | Total Expedientes |
+|----------|-----|-----|-------|---------|------|------------|------------------|-------------------|
+{% for row in step_statistics %}
+| {{ row.concepto }} | {{ row.min_steps }} | {{ row.max_steps }} | {{ row.mean_steps | round2 }} | {{ row.median_steps | round2 }} | {{ row.mode_steps }} | {{ row.std_steps | round2 }} | {{ row.total_circuitos }} | {{ row.total_expedientes | format_number }} |
+{% endfor %}
+
+### Interpretación
+- **Media vs Mediana:** Diferencias significativas indican distribución asimétrica de longitudes de circuito
+- **Desviación estándar alta:** Gran variabilidad en la longitud de circuitos dentro del concepto
+- **Moda:** Longitud de circuito más común (circuito modal típico)
+
+---
+
+## 5. Tiempos de Permanencia por Dependencia
+
+| Dependencia | Casos | Media (días) | Mediana (días) | Desv. Est. | Mín | Máx | Q1 | Q3 |
+|-------------|-------|--------------|----------------|------------|-----|-----|----|----|
+{% for row in permanence_by_dependencia %}
+| {{ row.dependencia }} | {{ row.count | format_number }} | {{ row.mean_days | round2 }} | {{ row.median_days | round2 }} | {{ row.std_days | round2 }} | {{ row.min_days }} | {{ row.max_days }} | {{ row.q25_days | round2 }} | {{ row.q75_days | round2 }} |
+{% endfor %}
+
+### Análisis de Cuellos de Botella
+Las dependencias con **mediana > 5 días** y **Q3 > 10 días** requieren atención para optimización de procesos.
+
+---
+
+## 6. Ranking de Tráfico de Dependencias
+
+| Dependencia | Expedientes Únicos | % Expedientes | Movimientos Totales | % Movimientos |
+|-------------|-------------------|---------------|---------------------|---------------|
+{% for row in dependency_traffic %}
+| {{ row.dependencia }} | {{ row.total_expedientes | format_number }} | {{ row.pct_expedientes | format_pct }} | {{ row.total_movimientos | format_number }} | {{ row.pct_movimientos | format_pct }} |
+{% endfor %}
+
+### Insights
+- **Top 3 dependencias** concentran el {{ dependency_traffic[:3] | sum(attribute='pct_movimientos') | round2 }}% del tráfico total
+- Dependencias con **alto % expedientes pero bajo % movimientos** son puntos de paso obligatorio (p. ej., Mesa de Entradas)
+
+---
+
+## 7. Detección de Outliers (Circuitos Atípicos)
+
+| Concepto | Circuito | Frecuencia | Tipo Outlier | Razón | Pasos |
+|----------|----------|------------|--------------|-------|-------|
+{% for row in outliers %}
+{% if row.outlier_type != 'none' %}
+| {{ row.concepto }} | {{ row.circuito_json | from_json | join(' → ') }} | {{ row.frecuencia }} | {{ row.outlier_type }} | {{ row.outlier_reason }} | {{ row.step_count }} |
+{% endif %}
+{% endfor %}
+
+### Clasificación de Outliers
+- **frequency:** Circuitos con frecuencia < 5% del total del concepto (casos raros)
+- **structural_steps:** Circuitos con longitud > 2.5x la moda (procesos anormalmente largos)
+- **structural_loop:** Circuitos con dependencias repetidas (bucles/retrocesos)
+
+### Acciones Recomendadas
+1. **Outliers de frecuencia:** Verificar si son errores de carga o casos excepcionales legítimos
+2. **Outliers estructurales (pasos):** Analizar si pasos adicionales son necesarios o burocracia innecesaria
+3. **Outliers con bucles:** Identificar causas de re-trabajo (documentación incompleta, errores, aprobaciones reiteradas)
+
+---
+
+## 8. Metodología y Limitaciones
+
+### Metodología
+1. **Extracción de datos:** Scraping automatizado del portal SUME UNL con rate limiting y reintentos
+2. **Normalización:** Reglas determinísticas + tabla de overrides explícitos para nombres de dependencias
+3. **Reconstrucción de circuitos:** Inyección de MDE (orden 0) + secuencia cronológica de movimientos
+4. **Análisis de frecuencias:** Agrupación exacta por secuencia JSON de dependencias
+5. **Identificación de modal:** Máxima frecuencia por concepto, umbral mínimo 5 expedientes
+6. **Estadísticas:** Cálculos vectorizados con pandas (media, mediana, moda, percentiles)
+7. **Outliers:** Umbral de frecuencia 5%, multiplicador estructural 2.5x, detección de bucles
+
+### Limitaciones
+- Los datos reflejan el estado del SUME al momento de la extracción
+- La normalización de dependencias depende de la completitud de la tabla de overrides
+- Circuitos con < 5 expedientes no tienen identificación modal confiable
+- Tiempos de permanencia calculados solo entre movimientos consecutivos registrados
+- No se capturan pasos fuera del sistema SUME (p. ej., trámites presenciales no registrados)
+
+### Trazabilidad
+- **Commit:** {{ version.split('.')[1] if version.split('.') | length > 1 else 'unknown' }}
+- **Hash de datos:** {{ version.split('.')[2] if version.split('.') | length > 2 else 'unknown' }}
+- **Configuración:** `config.yaml` + `config/normalization_rules.yaml`
+
+---
+
+*Informe generado automáticamente por SUME Dashboard v1.0.0*
+*Para consultas: Mesa de Entradas FBCB-UNL*

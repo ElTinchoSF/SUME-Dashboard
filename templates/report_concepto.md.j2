@@ -1,0 +1,224 @@
+# Hoja de Evidencia ISO 9001: {{ single_concepto }}
+
+**Versión:** {{ version }}
+**Fecha de generación:** {{ generated_at }}
+**Concepto:** {{ single_concepto }}
+
+---
+
+## 1. Resumen del Concepto
+
+| Métrica | Valor |
+|---------|-------|
+| Total expedientes | {{ concept_summaries[single_concepto].total_expedientes | format_number }} |
+| Período analizado | {{ concept_summaries[single_concepto].primera_fecha }} a {{ concept_summaries[single_concepto].ultima_fecha }} |
+| Circuitos únicos | {{ concept_summaries[single_concepto].unique_circuits }} |
+| Circuito modal identificado | {% if concept_summaries[single_concepto].modal_circuit %}Sí{% else %}No (muestra < 5){% endif %} |
+
+---
+
+## 2. Circuito Modal (Patrón Estándar)
+
+{% if concept_summaries[single_concepto].modal_circuit %}
+**Frecuencia:** {{ concept_summaries[single_concepto].modal_circuit.frecuencia }} / {{ concept_summaries[single_concepto].modal_circuit.total_concepto }} ({{ (concept_summaries[single_concepto].modal_circuit.frecuencia / concept_summaries[single_concepto].modal_circuit.total_concepto * 100) | round2 }}%)
+
+### Diagrama de Flujo (Mermaid)
+```mermaid
+flowchart TD
+{% for i, dep in enumerate(concept_summaries[single_concepto].modal_circuit.circuito) %}
+    {{ 'N' + i | string }}[{{ dep }}]
+{% endfor %}
+{% for i in range(concept_summaries[single_concepto].modal_circuit.circuito | length - 1) %}
+    {{ 'N' + i | string }} --> {{ 'N' + (i+1) | string }}
+{% endfor %}
+    style N0 fill:#e8f5e9,stroke:#2e7d32
+    style N{{ (concept_summaries[single_concepto].modal_circuit.circuito | length - 1) | string }} fill:#fff3e0,stroke:#ef6c00
+```
+
+### Tabla de Pasos del Circuito Modal
+| Orden | Dependencia | Tipo |
+|-------|-------------|------|
+{% for i, dep in enumerate(concept_summaries[single_concepto].modal_circuit.circuito) %}
+| {{ i }} | {{ dep }} | {% if i == 0 %}MDE (Inyección){% elif i == concept_summaries[single_concepto].modal_circuit.circuito | length - 1 %}Final{% else %}Intermedio{% endif %} |
+{% endfor %}
+
+{% else %}
+> **Advertencia:** No se pudo identificar un circuito modal confiable para este concepto (total de expedientes < umbral mínimo de 5).
+{% endif %}
+
+---
+
+## 3. Análisis Detallado de Todos los Circuitos
+
+| # | Secuencia Completa | Frecuencia | % | Modal | Outlier | Pasos |
+|---|-------------------|------------|---|-------|---------|-------|
+{% set concept_circuits = circuitos | selectattr('concepto', 'equalto', single_concepto) | list %}
+{% for circuit in concept_circuits %}
+{% set outlier_info = outliers | selectattr('circuito_json', 'equalto', circuit.circuito_json) | selectattr('concepto', 'equalto', single_concepto) | list %}
+{% set outlier_type = outlier_info[0].outlier_type if outlier_info else 'none' %}
+| {{ loop.index }} | {{ circuit.circuito_json | from_json | join(' → ') }} | {{ circuit.frecuencia | format_number }} | {{ (circuit.frecuencia / concept_summaries[single_concepto].total_expedientes * 100) | round2 }}% | {% if circuit.es_mas_frecuente %}✅{% else %}{% endif %} | {% if outlier_type != 'none' %}{{ outlier_type }}{% else %}—{% endif %} | {{ circuit.circuito_json | from_json | length }} |
+{% endfor %}
+
+### Estadísticas de Longitud de Circuitos
+{% set concept_step_stats = step_statistics | selectattr('concepto', 'equalto', single_concepto) | list %}
+{% if concept_step_stats %}
+| Estadística | Valor |
+|-------------|-------|
+| Mínimo pasos | {{ concept_step_stats[0].min_steps }} |
+| Máximo pasos | {{ concept_step_stats[0].max_steps }} |
+| Media | {{ concept_step_stats[0].mean_steps | round2 }} |
+| Mediana | {{ concept_step_stats[0].median_steps | round2 }} |
+| Moda | {{ concept_step_stats[0].mode_steps }} |
+| Desviación estándar | {{ concept_step_stats[0].std_steps | round2 }} |
+{% endif %}
+
+---
+
+## 4. Evidencia por Expediente (Muestra)
+
+### Expedientes que siguen el Circuito Modal
+{% if concept_summaries[single_concepto].modal_circuit %}
+{% set modal_json = concept_summaries[single_concepto].modal_circuit.circuito | to_json %}
+{% set modal_expedientes = [] %}
+{% for mov in movimientos %}
+{% if mov.concepto == single_concepto %}
+{% set modal_expedientes = modal_expedientes + [mov.numero] %}
+{% endif %}
+{% endfor %}
+{% set unique_modal_exp = modal_expedientes | unique %}
+**Total:** {{ unique_modal_exp | length }} expedientes
+
+| N° Expediente | Fecha Alta | Pasos Completados |
+|---------------|------------|-------------------|
+{% for exp_num in unique_modal_exp[:20] %}
+| {{ exp_num }} | {{ movimientos | selectattr('numero', 'equalto', exp_num) | map(attribute='fecha_recepcion') | first | default('N/A') }} | {{ movimientos | selectattr('numero', 'equalto', exp_num) | selectattr('concepto', 'equalto', single_concepto) | list | length }} |
+{% endfor %}
+{% if unique_modal_exp | length > 20 %}
+*... y {{ (unique_modal_exp | length - 20) }} expedientes más*
+{% endif %}
+{% else %}
+_No hay circuito modal identificado_
+{% endif %}
+
+### Expedientes con Circuitos Atípicos (Outliers)
+{% set concept_outliers = outliers | selectattr('concepto', 'equalto', single_concepto) | selectattr('outlier_type', '!=', 'none') | list %}
+{% if concept_outliers %}
+| N° Expediente | Circuito | Tipo Outlier | Razón |
+|---------------|----------|--------------|-------|
+{% for outlier in concept_outliers %}
+| _Ver expedientes asociados_ | {{ outlier.circuito_json | from_json | join(' → ') }} | {{ outlier.outlier_type }} | {{ outlier.outlier_reason }} |
+{% endfor %}
+{% else %}
+_No se detectaron outliers para este concepto_
+{% endif %}
+
+---
+
+## 5. Tiempos de Permanencia por Dependencia (Este Concepto)
+
+| Dependencia | Casos | Media (días) | Mediana (días) | Desv. Est. | Mín | Máx | Q1 | Q3 | Outliers (>Q3+1.5IQR) |
+|-------------|-------|--------------|----------------|------------|-----|-----|----|----|------------------------|
+{% for row in permanence_by_dependencia %}
+{% set concept_movs = movimientos | selectattr('concepto', 'equalto', single_concepto) | selectattr('dependencia', 'equalto', row.dependencia) | list %}
+{% if concept_movs %}
+| {{ row.dependencia }} | {{ row.count | format_number }} | {{ row.mean_days | round2 }} | {{ row.median_days | round2 }} | {{ row.std_days | round2 }} | {{ row.min_days }} | {{ row.max_days }} | {{ row.q25_days | round2 }} | {{ row.q75_days | round2 }} | {{ concept_movs | selectattr('permanence_days', '>', row.q75_days + 1.5 * (row.q75_days - row.q25_days)) | list | length }} |
+{% endif %}
+{% endfor %}
+
+### Análisis de Permanencia
+- **Dependencia con mayor permanencia media:** {{ permanence_by_dependencia | max(attribute='mean_days').dependencia if permanence_by_dependencia }} ({{ permanence_by_dependencia | max(attribute='mean_days').mean_days | round2 }} días)
+- **Dependencia con mayor variabilidad:** {{ permanence_by_dependencia | max(attribute='std_days').dependencia if permanence_by_dependencia }} (σ = {{ permanence_by_dependencia | max(attribute='std_days').std_days | round2 }})
+- **Posibles cuellos de botella:** Dependencias con mediana > 5 días
+
+---
+
+## 6. Tráfico de Dependencias (Este Concepto)
+
+| Dependencia | Expedientes | % Expedientes | Movimientos | % Movimientos | Posición Típica |
+|-------------|-------------|---------------|-------------|---------------|-----------------|
+{% for row in dependency_traffic %}
+{% set concept_movs = movimientos | selectattr('concepto', 'equalto', single_concepto) | selectattr('dependencia', 'equalto', row.dependencia) | list %}
+{% if concept_movs %}
+| {{ row.dependencia }} | {{ concept_movs | map(attribute='numero') | unique | list | length }} | {{ (concept_movs | map(attribute='numero') | unique | list | length / concept_summaries[single_concepto].total_expedientes * 100) | round2 }}% | {{ concept_movs | length }} | {{ (concept_movs | length / movimientos | selectattr('concepto', 'equalto', single_concepto) | list | length * 100) | round2 }}% | {{ concept_movs | map(attribute='orden') | min }}–{{ concept_movs | map(attribute='orden') | max }} |
+{% endif %}
+{% endfor %}
+
+---
+
+## 7. Cronograma Detallado de Movimientos (Muestra)
+
+| Expediente | Orden | Fecha Recepción | Dependencia | Permanencia (días) |
+|------------|-------|-----------------|-------------|-------------------|
+{% for mov in movimientos | selectattr('concepto', 'equalto', single_concepto) | sort(attribute='numero') | sort(attribute='orden') | list %}
+{% if loop.index <= 50 %}
+| {{ mov.numero }} | {{ mov.orden }} | {{ mov.fecha_recepcion }} | {{ mov.dependencia }} | {{ mov.permanence_days if mov.permanence_days is not none else 'Final' }} |
+{% endif %}
+{% endfor %}
+{% if movimientos | selectattr('concepto', 'equalto', single_concepto) | list | length > 50 %}
+*... muestra limitada a 50 movimientos de {{ movimientos | selectattr('concepto', 'equalto', single_concepto) | list | length }} totales*
+{% endif %}
+
+---
+
+## 8. Conclusiones y Recomendaciones para {{ single_concepto }}
+
+### Fortalezas del Proceso Actual
+- {% if concept_summaries[single_concepto].modal_circuit %}Circuito modal bien definido ({{ (concept_summaries[single_concepto].modal_circuit.frecuencia / concept_summaries[single_concepto].modal_circuit.total_concepto * 100) | round2 }}% de adherencia){% else %}Proceso flexible con múltiples variantes{% endif %}
+- {% set cv = concept_step_stats[0].std_steps / concept_step_stats[0].mean_steps if concept_step_stats and concept_step_stats[0].mean_steps > 0 else 0 %}{% if cv < 0.3 %}Baja variabilidad en longitud de circuitos (CV = {{ cv | round2 }}){% else %}Variabilidad moderada/alta en longitud (CV = {{ cv | round2 }}){% endif %}
+
+### Áreas de Mejora
+{% set concept_outliers = outliers | selectattr('concepto', 'equalto', single_concepto) | selectattr('outlier_type', '!=', 'none') | list %}
+{% if concept_outliers %}
+- **{{ concept_outliers | length }} circuitos atípicos detectados:** Requieren revisión de causa raíz
+{% endif %}
+{% set bottlenecks = permanence_by_dependencia | selectattr('median_days', '>', 5) | list %}
+{% if bottlenecks %}
+- **{{ bottlenecks | length }} dependencias con permanencia media > 5 días:** {{ bottlenecks | map(attribute='dependencia') | join(', ') }}
+{% endif %}
+{% set loops = outliers | selectattr('concepto', 'equalto', single_concepto) | selectattr('outlier_type', 'equalto', 'structural_loop') | list %}
+{% if loops %}
+- **{{ loops | length }} circuitos con bucles detectados:** Indican re-trabajo o aprobaciones reiteradas
+{% endif %}
+
+### Acciones Recomendadas (Prioridad)
+1. **Alta:** Investigar outliers de tipo `structural_loop` — posible ineficiencia de proceso
+2. **Media:** Revisar dependencias con alta permanencia (Q3 > 10 días) — optimizar tiempos de respuesta
+3. **Baja:** Estandarizar circuitos de baja frecuencia (< 5%) si son errores de carga
+
+### Métricas de Seguimiento (KPIs)
+| KPI | Valor Actual | Objetivo | Frecuencia Revisión |
+|-----|--------------|----------|---------------------|
+| Adherencia al circuito modal | {{ (concept_summaries[single_concepto].modal_circuit.frecuencia / concept_summaries[single_concepto].modal_circuit.total_concepto * 100) | round2 if concept_summaries[single_concepto].modal_circuit else 0 }}% | ≥ 80% | Mensual |
+| Tiempo medio total de trámite | {{ permanence_by_dependencia | sum(attribute='mean_days') | round2 }} días | < 30 días | Mensual |
+| % Expedientes con bucles | {{ (loops | length / concept_summaries[single_concepto].total_expedientes * 100) | round2 if concept_summaries[single_concepto].total_expedientes > 0 else 0 }}% | < 5% | Trimestral |
+| Variabilidad de pasos (CV) | {{ cv | round2 }} | < 0.3 | Trimestral |
+
+---
+
+## 9. Anexos
+
+### A. Configuración de Análisis
+- Umbral mínimo de muestra: 5 expedientes
+- Umbral outlier frecuencia: 5%
+- Multiplicador outlier pasos: 2.5x
+- Detección de bucles: Activada
+
+### B. Trazabilidad de Datos
+- **Fuente:** SUME UNL (https://servicios.unl.edu.ar/expedientes/)
+- **Facultad:** FBCB
+- **Extracción:** Automatizada via SUME Dashboard
+- **Hash de datos:** {{ version.split('.')[2] if version.split('.') | length > 2 else 'unknown' }}
+- **Commit:** {{ version.split('.')[1] if version.split('.') | length > 1 else 'unknown' }}
+
+### C. Definiciones
+- **Circuito:** Secuencia ordenada de dependencias por las que pasa un expediente
+- **Circuito Modal:** Circuito más frecuente para un concepto dado
+- **Permanencia:** Días entre recepción en una dependencia y recepción en la siguiente
+- **Outlier de frecuencia:** Circuito con < 5% de representatividad en su concepto
+- **Outlier estructural:** Circuito con > 2.5x pasos del modal o con bucles
+
+---
+
+*Hoja de evidencia generada automáticamente por SUME Dashboard v1.0.0*
+*Concepto: {{ single_concepto }} | Versión: {{ version }}*
+*Mesa de Entradas FBCB-UNL — Sistema de Gestión de Calidad ISO 9001*

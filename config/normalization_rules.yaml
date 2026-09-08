@@ -1,0 +1,103 @@
+# Normalization rules for SUME dependency names
+#
+# Rules are applied in order. First match wins.
+# The explicit_overrides table is checked FIRST (highest precedence).
+#
+# Rule types:
+# - mesa_entradas: Matches "Mesa de Entradas <FACULTAD>" pattern, normalizes to "Mesa de Entradas"
+# - preserve_mde: Preserves exact MDE dependency names (Mesa de Entradas, MDE, etc.)
+# - strip_parentheses: Removes trailing parenthetical content (e.g., "Dept. Alumnos (FBCB)" -> "Dept. Alumnos")
+# - identity: Returns input unchanged (fallback)
+# - explicit_override: Direct mapping from original -> normalized (checked first)
+
+rules:
+  - type: "explicit_override"
+    description: "Explicit mappings for known variations"
+    # These are defined in the explicit_overrides section below
+
+  - type: "mesa_entradas"
+    description: "Normalize all 'Mesa de Entradas <Facultad>' to 'Mesa de Entradas'"
+    pattern: "^Mesa de Entradas\\s+.*$"
+    replacement: "Mesa de Entradas"
+
+  - type: "preserve_mde"
+    description: "Preserve exact MDE names"
+    patterns:
+      - "^Mesa de Entradas$"
+      - "^MDE$"
+      - "^M\\.D\\.E\\.$"
+
+  - type: "strip_parentheses"
+    description: "Remove trailing parenthetical content like (FBCB), (FHUC), etc."
+    pattern: "\\s*\\([^)]+\\)\\s*$"
+    replacement: ""
+
+  - type: "identity"
+    description: "Fallback: return input unchanged"
+
+# Explicit override mappings (highest precedence)
+# Format: original_name -> normalized_name
+# These are checked BEFORE any rule is applied.
+explicit_overrides:
+  # Mesa de Entradas variations
+  "Mesa de Entradas FBCB": "Mesa de Entradas"
+  "Mesa de Entradas FHUC": "Mesa de Entradas"
+  "Mesa de Entradas FADU": "Mesa de Entradas"
+  "Mesa de Entradas FCJS": "Mesa de Entradas"
+  "Mesa de Entradas FICH": "Mesa de Entradas"
+  "Mesa de Entradas FCE": "Mesa de Entradas"
+  "Mesa de Entradas FAVE": "Mesa de Entradas"
+  "Mesa de Entradas FRSF": "Mesa de Entradas"
+  "Mesa de Entradas CEN": "Mesa de Entradas"
+
+  # Abbreviations
+  "MDE FBCB": "Mesa de Entradas"
+  "MDE": "Mesa de Entradas"
+  "M.D.E.": "Mesa de Entradas"
+
+  # Common department variations
+  "Dpto. Alumnos": "Departamento Alumnos"
+  "Dpto.Alumnos": "Departamento Alumnos"
+  "Depto. Alumnos": "Departamento Alumnos"
+  "Departamento de Alumnos": "Departamento Alumnos"
+  "Dpto Alumnos (FBCB)": "Departamento Alumnos"
+  "Dpto. Alumnos (FBCB)": "Departamento Alumnos"
+
+  "Sec. Académica": "Secretaría Académica"
+  "Secretaría Académica (FBCB)": "Secretaría Académica"
+
+  "Dir. Gral. Admin.": "Dirección General de Administración"
+  "Dirección Gral. de Administración": "Dirección General de Administración"
+
+  # Becas variations
+  "Dpto. Becas": "Departamento Becas"
+  "Departamento de Becas": "Departamento Becas"
+  "Dpto. Becas (FBCB)": "Departamento Becas"
+
+  # Bedelía variations
+  "Bedelia": "Bedelía"
+  "Bedelía (FBCB)": "Bedelía"
+
+  # Biblioteca variations
+  "Biblio.": "Biblioteca"
+  "Biblioteca (FBCB)": "Biblioteca"
+
+  # Consejo Directivo variations
+  "Consejo Dir.": "Consejo Directivo"
+  "C.D.": "Consejo Directivo"
+  "Consejo Directivo (FBCB)": "Consejo Directivo"
+
+  # Rectorado variations
+  "Rectorado UNL": "Rectorado"
+  "Rectorado (UNL)": "Rectorado"
+
+  # Other common variations
+  "Bienestar Estudiantil": "Bienestar Universitario"
+  "Bienestar Universitario (FBCB)": "Bienestar Universitario"
+
+# Metadata
+metadata:
+  version: "1.0"
+  description: "Normalization rules for SUME dependency names - SUME Dashboard v1"
+  last_updated: "2025-01-15"
+  maintained_by: "Mesa de Entradas FBCB-UNL"

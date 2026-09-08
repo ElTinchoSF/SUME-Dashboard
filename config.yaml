@@ -1,0 +1,34 @@
+database:
+  path: "data/sume.db"
+
+sume:
+  base_url: "https://servicios.unl.edu.ar/expedientes/"
+  search_path: "busqueda_avanzada.php"
+  detail_path: "ver_expediente.php"
+  faculty_filter: "FBCB"
+  year: 2025
+
+scraper:
+  delay_seconds: 0.5
+  timeout_seconds: 30
+  max_retries: 3
+  backoff_base: 1.0
+  rate_limit_wait: 60
+  user_agent: "SUME-Dashboard/1.0 (Mesa de Entradas FBCB-UNL)"
+
+normalizer:
+  rules_path: "config/normalization_rules.yaml"
+
+analyzer:
+  min_sample_threshold: 5
+  outlier_frequency_threshold: 0.05
+  outlier_step_multiplier: 2.5
+
+dashboard:
+  cache_ttl_seconds: 300
+  page_size: 1000
+
+reporter:
+  templates_dir: "templates"
+  output_dir: "reports"
+  version_format: "{date}.{commit_short}.{data_hash_short}"
