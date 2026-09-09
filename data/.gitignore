@@ -1,0 +1,7 @@
+# Ignore all files in data/ except this .gitignore
+*
+!.gitignore
+
+# But track directory structure
+!data/raw/
+!data/processed/
