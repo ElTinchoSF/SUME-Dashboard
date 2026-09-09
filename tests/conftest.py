@@ -310,6 +310,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "unit: Unit tests")
     config.addinivalue_line("markers", "integration: Integration tests")
     config.addinivalue_line("markers", "slow: Slow tests (e.g., performance benchmarks)")
+    config.addinivalue_line("markers", "benchmark: Performance benchmark tests")
     config.addinivalue_line("markers", "scraper: Scraper-related tests")
     config.addinivalue_line("markers", "analysis: Analysis-related tests")
     config.addinivalue_line("markers", "dashboard: Dashboard-related tests")

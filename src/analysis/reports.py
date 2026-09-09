@@ -117,6 +117,9 @@ def setup_jinja_env(templates_dir: str | Path) -> Environment:
     env.filters["format_pct"] = lambda n: f"{n:.1f}%" if isinstance(n, (int, float)) else str(n)
     env.filters["round2"] = lambda n: round(float(n), 2) if isinstance(n, (int, float)) else n
 
+    # Add enumerate as global for template loops
+    env.globals["enumerate"] = enumerate
+
     return env
 
 
