@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+data/raw/
+data/processed/
+*.db
+*.sqlite
+reports/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Streamlit
+.streamlit/
+
+# Node (for Playwright tests)
+node_modules/
+test-results/
+playwright-report/
