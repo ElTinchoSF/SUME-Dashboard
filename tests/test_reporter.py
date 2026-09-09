@@ -133,8 +133,8 @@ def temp_templates_dir():
 """)
 
         # Concepto report template
-        conceito_template = templates_dir / "report_concepto.md.j2"
-        conceito_template.write_text("""# Concepto Report: {{ single_concepto }}
+        concepto_template = templates_dir / "report_concepto.md.j2"
+        concepto_template.write_text("""# Concepto Report: {{ single_concepto }}
 
 **Version:** {{ version }}
 
@@ -430,7 +430,7 @@ class TestReporterGoldenFiles:
             # Modal marker may not appear if min_samples not met
 
     def test_concepto_report_golden_markdown(self, temp_db, temp_templates_dir):
-        """Test that conceito report markdown output matches expected structure."""
+        """Test that concepto report markdown output matches expected structure."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "golden_concepto.md"
 

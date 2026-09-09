@@ -402,7 +402,7 @@ class TestRunFullCircuitAnalysis:
         # Check modal circuits identified
         # Default min_samples=5 from config, so only Concepto A (5 expedientes) gets modal
         modal_count = result["es_mas_frecuente"].sum()
-        assert modal_count == 1  # One per conceito with sufficient samples (>=5)
+        assert modal_count == 1  # One per concepto with sufficient samples (>=5)
 
         # Verify data persisted to circuitos table
         cursor = temp_db.execute("SELECT COUNT(*) FROM circuitos")
