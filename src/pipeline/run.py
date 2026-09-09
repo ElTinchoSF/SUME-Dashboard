@@ -14,6 +14,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from src.analysis.circuits import run_full_circuit_analysis
+from src.analysis.reports import generate_main_report
+from src.analysis.statistics import run_full_statistics_analysis
 from src.config import get_settings
 from src.database import get_connection, init_database as db_init_database
 
@@ -70,15 +73,27 @@ def run_analyzer() -> int:
         int: Exit code (0 for success).
     """
     print("Running analyzer phase...")
-    # TODO: Implement analyzer (Phase 3)
-    print("Analyzer not yet implemented (Phase 3).")
-    print("This will:")
-    print("  - Read expedientes and movimientos from database")
-    print("  - Reconstruct circuits with MDE injection")
-    print("  - Compute circuit frequencies and identify modal circuits")
-    print("  - Calculate step statistics, permanence times, outliers")
-    print("  - Write circuitos table and analytics views")
-    return 0
+    try:
+        conn = get_connection()
+        print("  - Computing circuit frequencies and identifying modal circuits...")
+        circuit_result = run_full_circuit_analysis(conn)
+        print(f"  - Found {len(circuit_result)} unique circuits across {circuit_result['concepto'].nunique()} conceptos")
+        modal_count = int(circuit_result['es_mas_frecuente'].sum())
+        print(f"  - Identified {modal_count} modal circuits")
+
+        print("  - Computing step statistics, permanence times, outliers, dependency traffic, concept distribution...")
+        stats_result = run_full_statistics_analysis(conn)
+        print(f"  - Step statistics for {len(stats_result['step_statistics'])} conceptos")
+        print(f"  - Permanence times for {len(stats_result['permanence_times'])} movement steps")
+        print(f"  - Outliers detected: {len(stats_result['outliers'][stats_result['outliers']['outlier_type'] != 'none'])}")
+        print(f"  - Dependency traffic for {len(stats_result['dependency_traffic'])} dependencias")
+        print(f"  - Concept distribution for {len(stats_result['concept_distribution'])} conceptos")
+
+        print("Analyzer phase completed successfully.")
+        return 0
+    except Exception as e:
+        print(f"Error running analyzer: {e}", file=sys.stderr)
+        return 1
 
 
 def run_reporter(output: Optional[str] = None, format: str = "markdown",
@@ -95,13 +110,39 @@ def run_reporter(output: Optional[str] = None, format: str = "markdown",
         int: Exit code (0 for success).
     """
     print(f"Running reporter phase (format: {format})...")
-    # TODO: Implement reporter (Phase 3/5)
-    print("Reporter not yet implemented (Phase 3/5).")
-    print("This will:")
-    print("  - Load data from database")
-    print("  - Render Jinja2 templates")
-    print(f"  - Output to: {output or 'reports/iso9001.md'}")
-    return 0
+    try:
+        output_path = Path(output) if output else Path("reports/iso9001.md")
+        
+        # Parse conceptos filter
+        conceptos_filter = None
+        if conceptos:
+            conceptos_filter = [c.strip() for c in conceptos.split(",") if c.strip()]
+        
+        conn = get_connection()
+        
+        # First ensure analysis is done
+        print("  - Running circuit analysis...")
+        run_full_circuit_analysis(conn)
+        
+        print("  - Running statistics analysis...")
+        run_full_statistics_analysis(conn)
+        
+        print(f"  - Generating report: {output_path}")
+        generate_main_report(
+            output_path=output_path,
+            format_type=format,
+            conceptos_filter=conceptos_filter,
+            db=conn,
+            templates_dir="templates",
+        )
+        
+        print(f"Reporter phase completed successfully. Output: {output_path}")
+        return 0
+    except Exception as e:
+        print(f"Error running reporter: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 def run_all() -> int:
