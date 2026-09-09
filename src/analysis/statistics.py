@@ -410,7 +410,11 @@ def compute_dependency_traffic(db: sqlite3.Connection | None = None) -> pd.DataF
             "pct_expedientes", "pct_movimientos"
         ])
 
-    total_expedientes_all = df["total_expedientes"].sum()
+    # Get total unique expedientes from the database (not sum of per-dependency counts)
+    total_query = "SELECT COUNT(DISTINCT expediente_id) as total FROM movimientos"
+    total_df = pd.read_sql_query(total_query, db)
+    total_expedientes_all = total_df["total"].iloc[0]
+    
     total_movimientos_all = df["total_movimientos"].sum()
 
     df["pct_expedientes"] = (df["total_expedientes"] / total_expedientes_all * 100).round(2)

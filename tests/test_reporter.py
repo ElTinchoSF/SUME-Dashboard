@@ -291,8 +291,15 @@ class TestWriteOutput:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_report.xlsx"
             content = "# Test Report\n\nContent here."
+            context = {
+                "version": "1.0.0",
+                "generated_at": "2026-01-01",
+                "conceptos_filter": ["All"],
+                "concept_distribution": [],
+                "circuitos": [],
+            }
 
-            write_output(content, output_path, "excel")
+            write_output(content, output_path, "excel", context)
 
             assert output_path.exists()
             assert output_path.suffix == ".xlsx"
