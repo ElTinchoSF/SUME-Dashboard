@@ -64,6 +64,7 @@ def get_connection() -> sqlite3.Connection:
 
     Creates a new connection for the current thread if one doesn't exist.
     The connection is configured with WAL mode, foreign keys, and row factory.
+    Uses override factory if set via set_connection_factory() (for testing).
 
     Returns:
         sqlite3.Connection: Thread-local database connection.
@@ -74,7 +75,11 @@ def get_connection() -> sqlite3.Connection:
         with _connection_lock:
             # Double-check after acquiring lock
             if not hasattr(_local, "connection") or _local.connection is None:
-                _local.connection = _create_connection()
+                # Use override factory for testing if set
+                if _override_connection_factory is not None:
+                    _local.connection = _override_connection_factory()
+                else:
+                    _local.connection = _create_connection()
 
                 # Initialize schema on first connection (once per process)
                 if not _initialized:

@@ -81,3 +81,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 # Current schema version
 SCHEMA_VERSION = 1
+
+
+def init_db(conn) -> None:
+    """
+    Initialize database schema on an existing connection.
+    
+    Creates all tables and indexes if they don't exist.
+    
+    Args:
+        conn: SQLite connection to initialize.
+    """
+    conn.executescript(INIT_SQL)
