@@ -227,7 +227,7 @@ def render_template(env: Environment, template_name: str, context: dict[str, Any
     return template.render(**context)
 
 
-def write_output(content: str, output_path: Path, format_type: str) -> None:
+def write_output(content: str, output_path: Path, format_type: str, context: dict[str, Any] | None = None) -> None:
     """Write rendered content to file in the specified format."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -321,7 +321,7 @@ def generate_main_report(
     content = render_template(env, "report_main.md.j2", context)
 
     # Write output
-    write_output(content, output_path, format_type)
+    write_output(content, output_path, format_type, context)
 
     logger.info(f"Main report generated: {output_path} ({format_type})")
 
@@ -344,7 +344,7 @@ def generate_concepto_report(
     content = render_template(env, "report_concepto.md.j2", context)
 
     # Write output
-    write_output(content, output_path, format_type)
+    write_output(content, output_path, format_type, context)
 
     logger.info(f"Concepto report for '{concepto}' generated: {output_path} ({format_type})")
 

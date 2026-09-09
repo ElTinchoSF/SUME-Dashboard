@@ -206,7 +206,7 @@ def identify_modal_circuits(freq_df: pd.DataFrame, min_samples: int | None = Non
     # Process each concepto
     for concepto in result["concepto"].unique():
         concepto_mask = result["concepto"] == concepto
-        concepto_rows = result[conceito_mask]
+        concepto_rows = result[concepto_mask]
         total = concepto_rows["total_expedientes"].iloc[0]
 
         if total < min_samples:
