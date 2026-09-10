@@ -14,21 +14,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class SelectorConfig(BaseSettings):
     """CSS selectors for SUME HTML parsing."""
 
-    # Listing page selectors
-    listing_table: str = "table.tabla_expedientes"
+    # Listing page selectors (header search results)
+    listing_table: str = "table.table"
     listing_rows: str = "tbody tr"
-    listing_detail_link: str = "td:last-child a"
-    pagination_container: str = "div.pagination"
+    listing_detail_link: str = "td:first-child"
+    pagination_container: str = "ul.pagination"
     pagination_links: str = "a"
 
     # Detail page selectors
-    detail_numero: str = "div.expediente-header h1"
-    detail_concepto: str = "div.expediente-header span.concepto"
-    detail_info_container: str = "div.expediente-info"
-    detail_field_pattern: str = "p strong"
+    detail_numero: str = "h4.label"
+    detail_panel_body: str = "div.panel-body"
 
     # Movimientos table selectors
-    movimientos_table: str = "table.tabla_movimientos"
+    movimientos_table: str = "table.table"
     movimientos_rows: str = "tbody tr"
     movimientos_cells: str = "td"
 
@@ -54,10 +52,10 @@ class ScraperConfig(BaseSettings):
         description="User-Agent header for requests",
     )
 
-    # SUME URL configuration
+    # SUME URL configuration (updated for new SUME structure)
     base_url: str = "https://servicios.unl.edu.ar/expedientes/"
-    search_path: str = "busqueda_avanzada.php"
-    detail_path: str = "ver_expediente.php"
+    search_path: str = "buscar/"
+    detail_path: str = "expediente"
     faculty_filter: str = "FBCB"
 
     # Selectors
@@ -88,34 +86,30 @@ class ScraperConfig(BaseSettings):
         """Construct the full search URL."""
         return f"{self.base_url.rstrip('/')}/{self.search_path}"
 
-    def get_detail_url(self, detail_id: str) -> str:
-        """Construct a detail page URL from the detail ID."""
-        return f"{self.base_url.rstrip('/')}/{self.detail_path}?id={detail_id}"
+    def get_detail_url(self, numero: str) -> str:
+        """Construct a detail page URL from the expediente numero."""
+        return f"{self.base_url.rstrip('/')}/{self.detail_path}/{numero}"
 
-    def get_search_params(self, year: int, semester: Optional[int] = None) -> dict:
+    def get_search_params(self) -> dict:
         """
-        Build search parameters for SUME advanced search.
-
-        Args:
-            year: Year to search (e.g., 2025)
-            semester: Optional semester (1 for Jan-Jun, 2 for Jul-Dec)
+        Build search parameters for SUME header search.
 
         Returns:
-            Dictionary of query parameters for the search.
+            Dictionary of form data for the header search.
         """
-        if semester == 1:
-            fecha_desde = f"01/01/{year}"
-            fecha_hasta = f"30/06/{year}"
-        elif semester == 2:
-            fecha_desde = f"01/07/{year}"
-            fecha_hasta = f"31/12/{year}"
-        else:
-            fecha_desde = f"01/01/{year}"
-            fecha_hasta = f"31/12/{year}"
-
         return {
-            "numero": self.faculty_filter,
-            "fecha_desde": fecha_desde,
-            "fecha_hasta": fecha_hasta,
-            "buscar": "Buscar",
+            "header_search": "numero",
+            "header_search_text": self.faculty_filter,
         }
+
+    def get_page_url(self, page: int) -> str:
+        """
+        Construct a pagination URL.
+
+        Args:
+            page: Page number (1-indexed)
+
+        Returns:
+            Full URL for the specified page.
+        """
+        return f"{self.base_url.rstrip('/')}/{self.search_path}{page}/"

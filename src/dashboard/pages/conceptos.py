@@ -58,9 +58,9 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     # Load data for selected concepto
     with st.spinner(f"Cargando datos para '{selected_concepto}'..."):
-        circuitos_df = load_circuitos(selected_concepto)
-        step_stats_df = load_step_stats(selected_concepto)
-        permanence_df = load_permanence(selected_concepto)
+        circuitos_df = load_circuitos(selected_concepto, filters)
+        step_stats_df = load_step_stats(selected_concepto, filters)
+        permanence_df = load_permanence(selected_concepto, filters)
 
     if circuitos_df.empty:
         st.warning(f"No hay circuitos registrados para el concepto '{selected_concepto}'.")
@@ -92,7 +92,7 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     st.dataframe(
         display_df[["Circuito", "Frecuencia", "% del total", "Es Modal"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Circuito": st.column_config.TextColumn("Circuito", width="large"),
@@ -104,92 +104,92 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     # Also show as interactive Plotly table
     fig_table = circuit_frequency_table(circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35))
-    st.plotly_chart(fig_table, use_container_width=True)
+    st.plotly_chart(fig_table, width="stretch")
 
     st.divider()
 
-    # --- Row 1: Step Count Histogram ---
-    col1, col2 = st.columns([1, 1])
+    # --- Step Count Histogram (full-width) ---
+    st.subheader("Distribución de Cantidad de Pasos")
 
-    with col1:
-        st.subheader("Distribución de Cantidad de Pasos")
+    if not step_stats_df.empty:
+        stats_row = step_stats_df.iloc[0]
+        mean_steps = stats_row.get("mean_steps", 0)
+        median_steps = stats_row.get("median_steps", 0)
+        mode_steps = stats_row.get("mode_steps", 0)
 
-        if not step_stats_df.empty:
-            stats_row = step_stats_df.iloc[0]
-            mean_steps = stats_row.get("mean_steps", 0)
-            median_steps = stats_row.get("median_steps", 0)
-            mode_steps = stats_row.get("mode_steps", 0)
+        fig = histogram_steps(
+            circuitos_df,
+            bins=15,
+            title="",
+            mean_line=mean_steps,
+            median_line=median_steps,
+            mode_line=mode_steps,
+            height=450,
+        )
+        st.plotly_chart(fig, width="stretch")
 
-            fig = histogram_steps(
-                circuitos_df,
-                bins=15,
+        # Show statistics summary
+        st.caption(f"""
+        **Estadísticas de pasos:**
+        - Mínimo: {int(stats_row.get('min_steps', 0))} pasos
+        - Máximo: {int(stats_row.get('max_steps', 0))} pasos
+        - Media: {mean_steps:.1f} pasos
+        - Mediana: {median_steps:.1f} pasos
+        - Moda: {int(mode_steps)} pasos
+        - Desv. estándar: {stats_row.get('std_steps', 0):.1f} pasos
+        - Total expedientes: {int(stats_row.get('total_expedientes', 0)):,}
+        """)
+    else:
+        st.info("No hay datos de pasos para mostrar.")
+
+    st.divider()
+
+    # --- Permanence Boxplot (full-width) ---
+    st.subheader("Permanencia por Dependencia")
+
+    if not permanence_df.empty:
+        # Filter out final steps (None permanence) and Archivo Digital
+        valid_permanence = permanence_df[
+            permanence_df["permanence_days"].notna() &
+            (permanence_df["permanence_days"] >= 0) &
+            (~permanence_df["dependencia"].str.contains("Archivo Digital", case=False, na=False))
+        ].copy()
+
+        if not valid_permanence.empty:
+            fig = boxplot_permanence(
+                valid_permanence,
+                x="dependencia",
+                y="permanence_days",
                 title="",
-                mean_line=mean_steps,
-                median_line=median_steps,
-                mode_line=mode_steps,
-                height=400,
+                height=500,
+                points="outliers",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
-            # Show statistics summary
-            st.caption(f"""
-            **Estadísticas de pasos:**
-            - Mínimo: {int(stats_row.get('min_steps', 0))} pasos
-            - Máximo: {int(stats_row.get('max_steps', 0))} pasos
-            - Media: {mean_steps:.1f} pasos
-            - Mediana: {median_steps:.1f} pasos
-            - Moda: {int(mode_steps)} pasos
-            - Desv. estándar: {stats_row.get('std_steps', 0):.1f} pasos
-            - Total expedientes: {int(stats_row.get('total_expedientes', 0)):,}
-            """)
-        else:
-            st.info("No hay datos de pasos para mostrar.")
+            # Show summary stats
+            dep_stats = valid_permanence.groupby("dependencia")["permanence_days"].agg([
+                "count", "mean", "median", "std", "min", "max"
+            ]).round(1).sort_values("count", ascending=False)
 
-    with col2:
-        st.subheader("Permanencia por Dependencia")
-
-        if not permanence_df.empty:
-            # Filter out final steps (None permanence)
-            valid_permanence = permanence_df[
-                permanence_df["permanence_days"].notna() &
-                (permanence_df["permanence_days"] >= 0)
-            ].copy()
-
-            if not valid_permanence.empty:
-                fig = boxplot_permanence(
-                    valid_permanence,
-                    x="dependencia",
-                    y="permanence_days",
-                    title="",
-                    height=400,
-                    points="outliers",
+            with st.expander("📊 Ver estadísticas detalladas por dependencia"):
+                st.dataframe(
+                    dep_stats.reset_index(),
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "dependencia": "Dependencia",
+                        "count": "N° Movimientos",
+                        "mean": "Media (días)",
+                        "median": "Mediana (días)",
+                        "std": "Desv. Est.",
+                        "min": "Mín (días)",
+                        "max": "Máx (días)",
+                    },
                 )
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Show summary stats
-                dep_stats = valid_permanence.groupby("dependencia")["permanence_days"].agg([
-                    "count", "mean", "median", "std", "min", "max"
-                ]).round(1).sort_values("count", ascending=False)
-
-                with st.expander("📊 Ver estadísticas detalladas por dependencia"):
-                    st.dataframe(
-                        dep_stats.reset_index(),
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "dependencia": "Dependencia",
-                            "count": "N° Movimientos",
-                            "mean": "Media (días)",
-                            "median": "Mediana (días)",
-                            "std": "Desv. Est.",
-                            "min": "Mín (días)",
-                            "max": "Máx (días)",
-                        },
-                    )
-            else:
-                st.info("No hay datos de permanencia válidos (todos son pasos finales).")
         else:
-            st.info("No hay datos de permanencia para mostrar.")
+            st.info("No hay datos de permanencia válidos (todos son pasos finales).")
+    else:
+        st.info("No hay datos de permanencia para mostrar.")
 
     st.divider()
 
@@ -198,7 +198,7 @@ def render_conceptos_page(filters: FilterState) -> None:
         if not step_stats_df.empty:
             st.dataframe(
                 step_stats_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "concepto": "Concepto",

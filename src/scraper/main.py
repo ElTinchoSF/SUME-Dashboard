@@ -2,26 +2,33 @@
 Scraper orchestrator for SUME Dashboard.
 
 Coordinates the complete scraping workflow:
-1. Search SUME with faculty filter and date range (semester support)
-2. Paginate through all result pages
-3. For each detail URL: fetch → parse → normalize → persist in single transaction
-4. Save raw HTML snapshots to data/raw/
-5. Generate post-run validation report
-6. Handle duplicates via UNIQUE constraint on expedientes.numero
+1. Search SUME with faculty filter using header search
+2. Parse listing pages to extract expediente data directly
+3. Paginate through all result pages
+4. For each expediente: fetch detail page for movimientos
+5. Normalize and persist in single transaction
+6. Save raw HTML snapshots to data/raw/
+7. Generate post-run validation report
+8. Handle duplicates via UNIQUE constraint on expedientes.numero
+
+Updated for new SUME structure (2026):
+- Header search: POST to buscar/ with header_search=numero, header_search_text=FBCB
+- Listing table: numero, descripcion, concepto, origen, fecha_alta, ultimo_movimiento
+- Detail page: movimientos table only (fecha_envio, fecha_recepcion, dependencia_destino)
+- Pagination: buscar/{page}/
 """
 
 import logging
+import re
 import sys
+import time
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from src.config import get_settings
 from src.database import get_connection, transaction
-from src.database.models import ExpedienteInputDict, MovimientoInputDict, DependenciaInputDict
 from src.database.connection import close_connection
-from src.scraper.client import SUMEClient, RequestResult
+from src.scraper.client import SUMEClient
 from src.scraper.config import ScraperConfig
 from src.scraper.parser import (
     parse_listing_page,
@@ -30,7 +37,7 @@ from src.scraper.parser import (
     ExpedienteDict,
     MovimientoDict,
 )
-from src.scraper.normalizer import get_normalizer, normalize, NormalizationRules
+from src.scraper.normalizer import get_normalizer, normalize
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +53,7 @@ class ScraperStats:
     missing_required_fields: int = 0
     parse_errors: int = 0
     http_errors: int = 0
+    pages_scraped: int = 0
     start_time: Optional[float] = None
     end_time: Optional[float] = None
 
@@ -66,6 +74,7 @@ class ScraperStats:
             "missing_required_fields": self.missing_required_fields,
             "parse_errors": self.parse_errors,
             "http_errors": self.http_errors,
+            "pages_scraped": self.pages_scraped,
             "duration_seconds": round(self.duration_seconds, 2),
         }
 
@@ -82,7 +91,7 @@ class ValidationReport:
 
     def has_critical_errors(self) -> bool:
         """Check if there are critical errors that should fail the run."""
-        return self.stats.duplicate_expedientes > 0
+        return self.stats.http_errors > 10  # Too many HTTP errors
 
     def print_summary(self) -> None:
         """Print a formatted validation summary."""
@@ -92,10 +101,11 @@ class ValidationReport:
         print(f"Total expedientes processed: {self.stats.total_expedientes}")
         print(f"Total movimientos extracted: {self.stats.total_movimientos}")
         print(f"Expedientes with zero movimientos: {self.stats.expedientes_with_zero_movimientos}")
-        print(f"Duplicate expedientes (blocked by UNIQUE): {self.stats.duplicate_expedientes}")
+        print(f"Duplicate expedientes (skipped): {self.stats.duplicate_expedientes}")
         print(f"Missing required fields: {self.stats.missing_required_fields}")
         print(f"Parse errors: {self.stats.parse_errors}")
         print(f"HTTP errors: {self.stats.http_errors}")
+        print(f"Pages scraped: {self.stats.pages_scraped}")
         print(f"Duration: {self.stats.duration_seconds:.1f}s")
 
         if self.duplicates:
@@ -112,15 +122,10 @@ class ValidationReport:
             if len(self.zero_movimientos_expedientes) > 10:
                 print(f"  ... and {len(self.zero_movimientos_expedientes) - 10} more")
 
-        if self.missing_fields_expedientes:
-            print(f"\nExpedientes with missing required fields:")
-            for item in self.missing_fields_expedientes[:10]:
-                print(f"  - {item['numero']}: missing {item['fields']}")
-
         if self.parse_error_details:
             print(f"\nParse errors:")
             for item in self.parse_error_details[:5]:
-                print(f"  - {item['url']}: {item['error']}")
+                print(f"  - {item.get('url', 'N/A')}: {item['error']}")
 
         print("=" * 60)
 
@@ -146,34 +151,62 @@ class ScraperOrchestrator:
         self.stats = ScraperStats()
         self.validation_report = ValidationReport(stats=self.stats)
 
-    def run(self, year: int = 2025, semester: Optional[int] = None) -> ValidationReport:
+    def run(self, max_pages: Optional[int] = None) -> ValidationReport:
         """
         Execute the complete scraping workflow.
 
         Args:
-            year: Year to scrape (default 2025)
-            semester: Optional semester (1 for Jan-Jun, 2 for Jul-Dec, None for full year)
+            max_pages: Maximum number of pages to scrape (None for all)
 
         Returns:
             ValidationReport with statistics and any issues found.
         """
-        import time
         self.stats.start_time = time.time()
-        logger.info(f"Starting scraper run for year={year}, semester={semester}")
+        logger.info(f"Starting scraper run (max_pages={max_pages})")
 
         try:
-            # Build search parameters
-            search_params = self.config.get_search_params(year, semester)
-            logger.info(f"Search params: {search_params}")
+            # Step 1: Fetch first page to get total pages
+            first_page_result = self._fetch_listing_page(1)
+            if not first_page_result:
+                logger.error("Failed to fetch first listing page")
+                return self.validation_report
 
-            # Execute search and pagination
-            detail_urls = self._fetch_all_detail_urls(search_params)
-            logger.info(f"Found {len(detail_urls)} expediente detail URLs")
+            # Parse first page
+            first_listing = parse_listing_page(
+                first_page_result,
+                self.config.base_url,
+            )
 
-            # Process each expediente
-            for i, detail_url in enumerate(detail_urls, 1):
-                logger.info(f"Processing {i}/{len(detail_urls)}: {detail_url}")
-                self._process_expediente(detail_url, i, len(detail_urls))
+            total_pages = first_listing.total_pages
+            logger.info(f"Total pages available: {total_pages}")
+
+            if max_pages:
+                total_pages = min(total_pages, max_pages)
+                logger.info(f"Limiting to {total_pages} pages")
+
+            # Process first page expedientes
+            self._process_listing_expedientes(first_listing.expedientes, 1)
+
+            # Step 2: Process remaining pages
+            for page_num in range(2, total_pages + 1):
+                logger.info(f"Fetching page {page_num}/{total_pages}")
+
+                page_result = self._fetch_listing_page(page_num)
+                if not page_result:
+                    logger.error(f"Failed to fetch page {page_num}")
+                    self.stats.http_errors += 1
+                    continue
+
+                # Parse page
+                listing = parse_listing_page(
+                    page_result,
+                    self.config.base_url,
+                )
+
+                # Process expedientes from this page
+                self._process_listing_expedientes(listing.expedientes, page_num)
+
+                self.stats.pages_scraped += 1
 
             # Generate validation report
             self._generate_validation_report()
@@ -192,146 +225,117 @@ class ScraperOrchestrator:
 
         return self.validation_report
 
-    def _fetch_all_detail_urls(self, search_params: dict) -> list[str]:
+    def _fetch_listing_page(self, page_num: int) -> Optional[str]:
         """
-        Search SUME and paginate through all result pages.
+        Fetch a single listing page.
 
         Args:
-            search_params: Search parameters for SUME advanced search.
+            page_num: Page number to fetch (1 for first page)
 
         Returns:
-            List of all detail URLs found.
+            HTML content or None on error
         """
-        all_urls = []
-        page = 1
+        if page_num == 1:
+            # First page: use header search
+            search_params = self.config.get_search_params()
+            result = self.client.search(search_params)
+        else:
+            # Subsequent pages: use page URL
+            page_url = self.config.get_page_url(page_num)
+            result = self.client.get(page_url)
 
-        while True:
-            logger.info(f"Fetching listing page {page}")
+        if result.error:
+            logger.error(f"HTTP error on page {page_num}: {result.error}")
+            return None
 
-            # Add page parameter if not first page
-            params = search_params.copy()
-            if page > 1:
-                params["page"] = page
+        if result.status_code != 200:
+            logger.error(f"Status {result.status_code} on page {page_num}")
+            return None
 
-            result = self.client.search(params)
+        # Save raw HTML
+        self.client.save_raw_html(result.content, f"listing_page_{page_num}")
 
-            if result.error:
-                logger.error(f"Search failed on page {page}: {result.error}")
-                self.stats.http_errors += 1
-                break
+        return result.content
 
-            if result.status_code != 200:
-                logger.error(f"Search returned status {result.status_code} on page {page}")
-                self.stats.http_errors += 1
-                break
-
-            # Save raw HTML for this listing page
-            self.client.save_raw_html(result.content, f"listing_page_{page}")
-
-            # Parse listing page
-            listing = parse_listing_page(
-                result.content,
-                self.config.base_url,
-            )
-
-            if not listing.detail_urls:
-                logger.info(f"No more results on page {page}, stopping pagination")
-                break
-
-            all_urls.extend(listing.detail_urls)
-            logger.info(f"Page {page}: found {len(listing.detail_urls)} expedientes")
-
-            # Check for next page
-            if not listing.next_page_url:
-                logger.info("No next page link found, stopping pagination")
-                break
-
-            page += 1
-
-            # Safety limit
-            if page > 1000:
-                logger.warning("Reached maximum page limit (1000), stopping")
-                break
-
-        return all_urls
-
-    def _process_expediente(self, detail_url: str, index: int, total: int) -> None:
+    def _process_listing_expedientes(self, expedientes: list[ExpedienteDict], page_num: int) -> None:
         """
-        Process a single expediente: fetch, parse, normalize, persist.
+        Process expedientes from a listing page.
+
+        For each expediente:
+        1. Fetch detail page for movimientos
+        2. Parse movimientos table
+        3. Normalize and persist
 
         Args:
-            detail_url: URL of the expediente detail page
-            index: Current index (1-based)
-            total: Total number of expedientes
+            expedientes: List of ExpedienteDict from listing page
+            page_num: Current page number (for logging)
         """
-        try:
-            # Fetch detail page
-            result = self.client.get_detail(self._extract_detail_id(detail_url))
+        for i, expediente in enumerate(expedientes, 1):
+            logger.debug(f"Processing {expediente.numero} ({i}/{len(expedientes)} on page {page_num})")
 
-            if result.error:
-                logger.error(f"Failed to fetch {detail_url}: {result.error}")
-                self.stats.http_errors += 1
-                return
-
-            if result.status_code != 200:
-                logger.error(f"Detail page returned status {result.status_code}: {detail_url}")
-                self.stats.http_errors += 1
-                return
-
-            # Save raw HTML snapshot
-            detail_id = self._extract_detail_id(detail_url)
-            self.client.save_raw_html(result.content, f"detail_{detail_id}")
-
-            # Parse detail page
             try:
-                expediente = parse_detail_page(result.content, detail_url)
-            except ValueError as e:
-                logger.error(f"Parse error for {detail_url}: {e}")
+                # Fetch detail page for movimientos
+                movimientos = self._fetch_and_parse_movimientos(expediente)
+
+                # Normalize dependencies
+                for mov in movimientos:
+                    mov.dependencia = normalize(mov.dependencia, self.normalizer_rules)
+
+                if expediente.origenes:
+                    expediente.origenes = normalize(expediente.origenes, self.normalizer_rules)
+
+                # Persist in single transaction
+                self._persist_expediente(expediente, movimientos)
+
+                # Update stats
+                self.stats.total_expedientes += 1
+                self.stats.total_movimientos += len(movimientos)
+
+                if len(movimientos) == 0:
+                    self.stats.expedientes_with_zero_movimientos += 1
+                    self.validation_report.zero_movimientos_expedientes.append(expediente.numero)
+
+            except Exception as e:
+                logger.exception(f"Error processing {expediente.numero}: {e}")
                 self.stats.parse_errors += 1
                 self.validation_report.parse_error_details.append({
-                    "url": detail_url,
+                    "url": expediente.detail_url,
                     "error": str(e),
                 })
-                return
 
-            # Parse movimientos
-            movimientos = parse_movimientos_table(result.content)
+    def _fetch_and_parse_movimientos(self, expediente: ExpedienteDict) -> list[MovimientoDict]:
+        """
+        Fetch detail page and parse movimientos table.
 
-            # Normalize dependencies in movimientos
-            for mov in movimientos:
-                mov.dependencia = normalize(mov.dependencia, self.normalizer_rules)
+        Args:
+            expediente: ExpedienteDict with detail_url
 
-            # Also normalize origenes if present
-            if expediente.origenes:
-                expediente.origenes = normalize(expediente.origenes, self.normalizer_rules)
+        Returns:
+            List of MovimientoDict
+        """
+        # Extract numero from URL
+        numero = expediente.numero
 
-            # Persist in single transaction
-            self._persist_expediente(expediente, movimientos)
+        # Fetch detail page
+        result = self.client.get(expediente.detail_url)
 
-            # Update stats
-            self.stats.total_expedientes += 1
-            self.stats.total_movimientos += len(movimientos)
+        if result.error:
+            logger.warning(f"Failed to fetch detail for {numero}: {result.error}")
+            self.stats.http_errors += 1
+            return []
 
-            if len(movimientos) == 0:
-                self.stats.expedientes_with_zero_movimientos += 1
-                self.validation_report.zero_movimientos_expedientes.append(expediente.numero)
+        if result.status_code != 200:
+            logger.warning(f"Detail page returned {result.status_code} for {numero}")
+            self.stats.http_errors += 1
+            return []
 
-        except Exception as e:
-            logger.exception(f"Unexpected error processing {detail_url}: {e}")
-            self.stats.parse_errors += 1
-            self.validation_report.parse_error_details.append({
-                "url": detail_url,
-                "error": f"Unexpected error: {e}",
-            })
+        # Save raw HTML
+        self.client.save_raw_html(result.content, f"detail_{numero}")
 
-    def _extract_detail_id(self, detail_url: str) -> str:
-        """Extract the detail ID from a detail URL."""
-        import re
-        match = re.search(r"[?&]id=(\d+)", detail_url)
-        if match:
-            return match.group(1)
-        # Fallback: use last path segment
-        return detail_url.split("/")[-1].split("?")[0]
+        # Parse movimientos
+        movimientos = parse_movimientos_table(result.content)
+
+        return movimientos
 
     def _persist_expediente(self, expediente: ExpedienteDict, movimientos: list[MovimientoDict]) -> None:
         """
@@ -353,7 +357,7 @@ class ScraperOrchestrator:
             if existing:
                 self.stats.duplicate_expedientes += 1
                 self.validation_report.duplicates.append(expediente.numero)
-                logger.info(f"Duplicate expediente skipped: {expediente.numero}")
+                logger.debug(f"Duplicate expediente skipped: {expediente.numero}")
                 return
 
             # Insert expediente
@@ -374,14 +378,14 @@ class ScraperOrchestrator:
             )
             expediente_id = cursor.lastrowid
 
-            # Insert movimientos
-            for mov in movimientos:
+            # Insert movimientos (reverse order: SUME shows newest first, we want oldest first)
+            for i, mov in enumerate(reversed(movimientos), start=1):
                 conn.execute(
                     """
                     INSERT INTO movimientos (expediente_id, orden, fecha_recepcion, dependencia)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (expediente_id, mov.orden, mov.fecha_recepcion, mov.dependencia),
+                    (expediente_id, i, mov.fecha_recepcion, mov.dependencia),
                 )
 
             # Update dependencias table (upsert)
@@ -404,34 +408,29 @@ class ScraperOrchestrator:
                 else:
                     conn.execute(
                         "INSERT INTO dependencias (nombre, nombre_original, total_expedientes) VALUES (?, ?, 1)",
-                        (dep_name, dep_name),  # nombre_original same as nombre for now
+                        (dep_name, dep_name),
                     )
 
     def _generate_validation_report(self) -> None:
         """Generate and log the validation report."""
         self.validation_report.print_summary()
-
-        # Log summary
         logger.info("Scraper run completed", extra=self.stats.to_dict())
 
-        if self.validation_report.has_critical_errors():
-            logger.error("Validation failed: duplicate expedientes detected")
-            sys.exit(1)
 
-
-def run_scraper(year: int = 2025, semester: Optional[int] = None) -> ValidationReport:
+def run_scraper(year: int = 2025, semester: Optional[int] = None, max_pages: Optional[int] = None) -> ValidationReport:
     """
     Convenience function to run the scraper.
 
     Args:
-        year: Year to scrape (default 2025)
-        semester: Optional semester (1 or 2)
+        year: Year to scrape (default 2025, kept for compatibility)
+        semester: Semester to scrape (kept for compatibility, not used in new SUME)
+        max_pages: Maximum pages to scrape (None for all)
 
     Returns:
         ValidationReport with results.
     """
     orchestrator = ScraperOrchestrator()
-    return orchestrator.run(year=year, semester=semester)
+    return orchestrator.run(max_pages=max_pages)
 
 
 def run_scraper_cli(args: list[str]) -> int:
@@ -439,7 +438,7 @@ def run_scraper_cli(args: list[str]) -> int:
     CLI entry point for the scraper.
 
     Args:
-        args: Command line arguments (e.g., ['--year', '2025', '--semester', '1'])
+        args: Command line arguments
 
     Returns:
         Exit code (0 for success, 1 for failure).
@@ -447,8 +446,9 @@ def run_scraper_cli(args: list[str]) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="SUME Scraper")
-    parser.add_argument("--year", type=int, default=2025, help="Year to scrape")
-    parser.add_argument("--semester", type=int, choices=[1, 2], help="Semester to scrape (1 or 2)")
+    parser.add_argument("--year", type=int, default=2025, help="Year to scrape (kept for compatibility)")
+    parser.add_argument("--semester", type=int, choices=[1, 2], help="Semester (kept for compatibility)")
+    parser.add_argument("--max-pages", type=int, help="Maximum pages to scrape")
     parser.add_argument("--config", type=str, help="Path to config file")
 
     parsed = parser.parse_args(args)
@@ -458,7 +458,7 @@ def run_scraper_cli(args: list[str]) -> int:
         config = ScraperConfig.load(Path(parsed.config))
 
     orchestrator = ScraperOrchestrator(config)
-    report = orchestrator.run(year=parsed.year, semester=parsed.semester)
+    report = orchestrator.run(max_pages=parsed.max_pages)
 
     return 1 if report.has_critical_errors() else 0
 

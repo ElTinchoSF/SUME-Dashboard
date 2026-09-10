@@ -80,7 +80,7 @@ def render_reportes_page(filters: FilterState) -> None:
         if st.button(
             "📄 Generar Reporte Completo",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=report_scope == "Concepto específico",
             help="Generar reporte ISO 9001 completo con todas las secciones",
         ):
@@ -94,7 +94,7 @@ def render_reportes_page(filters: FilterState) -> None:
         if st.button(
             "📋 Generar Reporte por Concepto",
             type="secondary",
-            use_container_width=True,
+            width="stretch",
             disabled=report_scope != "Concepto específico" or not selected_concepto,
             help="Generar reporte focalizado para el concepto seleccionado",
         ):
@@ -198,7 +198,7 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
                 data=file_data,
                 file_name=output_filename,
                 mime=_get_mime_type(fmt),
-                use_container_width=True,
+                width="stretch",
             )
 
             # Also show the output path

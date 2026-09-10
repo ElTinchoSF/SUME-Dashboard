@@ -3,7 +3,7 @@ CLI entry point for the SUME Dashboard pipeline.
 
 Usage:
     python -m src.pipeline run --phase init-db
-    python -m src.pipeline run --phase scraper --semester 1
+    python -m src.pipeline run --phase scraper --max-pages 5
     python -m src.pipeline run --phase analyzer
     python -m src.pipeline run --phase reporter --output reports/iso9001.md
     python -m src.pipeline run --phase all
@@ -43,26 +43,106 @@ def init_database() -> int:
         return 1
 
 
-def run_scraper(semester: Optional[int] = None) -> int:
+def run_scraper(max_pages: Optional[int] = None, date_from: Optional[str] = None, date_to: Optional[str] = None) -> int:
     """
     Run the scraper phase.
 
     Args:
-        semester: Optional semester to scrape (1 or 2). If None, scrapes full year.
+        max_pages: Maximum pages to scrape. If None, scrapes all pages.
+        date_from: Filter expedientes created from this date (YYYY-MM-DD).
+        date_to: Filter expedientes created up to this date (YYYY-MM-DD).
 
     Returns:
         int: Exit code (0 for success).
     """
-    print(f"Running scraper phase{' for semester ' + str(semester) if semester else ''}...")
-    # TODO: Implement scraper orchestration (Phase 2)
-    print("Scraper not yet implemented (Phase 2).")
-    print("This will:")
-    print("  - Search SUME with faculty FBCB and date range")
-    print("  - Paginate through all result pages")
-    print("  - Fetch, parse, normalize, and persist each expediente")
-    print("  - Save raw HTML snapshots to data/raw/")
-    print("  - Generate validation report")
-    return 0
+    from src.scraper.main import run_scraper as scrape
+
+    print(f"Running scraper phase{' (max ' + str(max_pages) + ' pages)' if max_pages else ''}...")
+    if date_from or date_to:
+        print(f"  - Date filter: {date_from or '...'} to {date_to or '...'}")
+    report = scrape(max_pages=max_pages)
+    report.print_summary()
+
+    # Apply date filter if specified
+    if date_from or date_to:
+        _filter_expedientes_by_date(date_from, date_to)
+
+    return 1 if report.has_critical_errors() else 0
+
+
+def _filter_expedientes_by_date(date_from: Optional[str], date_to: Optional[str]) -> None:
+    """
+    Filter expedientes by creation date, removing those outside the range.
+
+    This runs AFTER scraping to ensure we only keep expedientes within the
+    specified date range, while preserving their complete movements.
+
+    Args:
+        date_from: Start date (YYYY-MM-DD) or None for no lower bound.
+        date_to: End date (YYYY-MM-DD) or None for no upper bound.
+    """
+    from src.database import get_connection, transaction
+
+    conn = get_connection()
+
+    # Build WHERE clause
+    where_clauses = []
+    params = []
+
+    if date_from:
+        where_clauses.append("fecha_alta >= ?")
+        params.append(date_from)
+    if date_to:
+        where_clauses.append("fecha_alta <= ?")
+        params.append(date_to)
+
+    if not where_clauses:
+        return
+
+    where_clause = "WHERE " + " AND ".join(where_clauses)
+
+    # Count expedientes to be removed
+    count_query = f"SELECT COUNT(*) FROM expedientes {where_clause}"
+    cursor = conn.execute(count_query, params)
+    count_to_keep = cursor.fetchone()[0]
+
+    # Count total
+    total_query = "SELECT COUNT(*) FROM expedientes"
+    cursor = conn.execute(total_query)
+    total_count = cursor.fetchone()[0]
+
+    count_to_remove = total_count - count_to_keep
+
+    if count_to_remove > 0:
+        print(f"\n  - Filtering by date: keeping {count_to_keep} expedientes, removing {count_to_remove}")
+
+        # Get IDs of expedientes to keep
+        keep_query = f"SELECT id FROM expedientes {where_clause}"
+        cursor = conn.execute(keep_query, params)
+        keep_ids = {row[0] for row in cursor.fetchall()}
+
+        # Get all expediente IDs
+        cursor = conn.execute("SELECT id FROM expedientes")
+        all_ids = {row[0] for row in cursor.fetchall()}
+
+        # IDs to remove
+        remove_ids = all_ids - keep_ids
+
+        if remove_ids:
+            with transaction() as conn:
+                # Remove movimientos for expedientes to delete
+                placeholders = ",".join("?" * len(remove_ids))
+                conn.execute(f"DELETE FROM movimientos WHERE expediente_id IN ({placeholders})", list(remove_ids))
+
+                # Remove expedientes
+                conn.execute(f"DELETE FROM expedientes WHERE id IN ({placeholders})", list(remove_ids))
+
+                # Remove orphaned dependencias (optional, could keep for reference)
+                # conn.execute("DELETE FROM dependencias WHERE ...")
+
+            print(f"  - Removed {len(remove_ids)} expedientes outside date range")
+    else:
+        print(f"\n  - All {total_count} expedientes are within date range")
 
 
 def run_analyzer() -> int:
@@ -175,7 +255,8 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   python -m src.pipeline run --phase init-db
-  python -m src.pipeline run --phase scraper --semester 1
+  python -m src.pipeline run --phase scraper --max-pages 5
+  python -m src.pipeline run --phase scraper --date-from 2026-01-01 --date-to 2026-06-30
   python -m src.pipeline run --phase analyzer
   python -m src.pipeline run --phase reporter --output reports/iso9001.md --format markdown
   python -m src.pipeline run --phase all
@@ -193,10 +274,19 @@ Examples:
         help="Pipeline phase to run",
     )
     run_parser.add_argument(
-        "--semester",
+        "--max-pages",
         type=int,
-        choices=[1, 2],
-        help="Semester for scraper phase (1 or 2)",
+        help="Maximum pages to scrape (scraper phase)",
+    )
+    run_parser.add_argument(
+        "--date-from",
+        type=str,
+        help="Filter expedientes created from this date (YYYY-MM-DD, scraper phase)",
+    )
+    run_parser.add_argument(
+        "--date-to",
+        type=str,
+        help="Filter expedientes created up to this date (YYYY-MM-DD, scraper phase)",
     )
     run_parser.add_argument(
         "--output",
@@ -239,7 +329,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.phase == "init-db":
         return init_database()
     elif args.phase == "scraper":
-        return run_scraper(args.semester)
+        return run_scraper(args.max_pages, args.date_from, args.date_to)
     elif args.phase == "analyzer":
         return run_analyzer()
     elif args.phase == "reporter":

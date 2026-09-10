@@ -1,12 +1,10 @@
 """
 Dependency name normalizer for SUME Dashboard.
 
-Implements 5 normalization rules with explicit override precedence:
-1. explicit_override: Direct mapping from original -> normalized (highest precedence)
-2. mesa_entradas: Normalize "Mesa de Entradas <Facultad>" to "Mesa de Entradas"
-3. preserve_mde: Preserve exact MDE names (Mesa de Entradas, MDE, M.D.E.)
-4. strip_parentheses: Remove trailing parenthetical content like "(FBCB)"
-5. identity: Return input unchanged (fallback, lowest precedence)
+Implements normalization rules that preserve faculty information:
+- "Despacho General (Mesa de Entradas - FBCB)" → "Despacho General (FBCB)"
+- "Mesa de Entradas - FBCB" → "Mesa de Entradas - FBCB" (preserved)
+- "CETRI (Mesa de Entradas - Rectorado)" → "CETRI (Rectorado)"
 
 Provides idempotency guarantee: normalize(normalize(x)) == normalize(x)
 """
@@ -80,23 +78,53 @@ def load_rules(path: Path) -> NormalizationRules:
     )
 
 
+def _extract_faculty_from_parentheses(text: str) -> tuple[str, Optional[str]]:
+    """
+    Extract faculty from parenthetical notation.
+
+    Examples:
+        "Despacho General (Mesa de Entradas - FBCB)" → ("Despacho General", "FBCB")
+        "CETRI (Mesa de Entradas - Rectorado)" → ("CETRI", "Rectorado")
+        "Secretaría Académica (FBCB)" → ("Secretaría Académica", "FBCB")
+        "Despacho General" → ("Despacho General", None)
+
+    Returns:
+        Tuple of (dependency_name, faculty_abbreviation or None)
+    """
+    # Pattern: "Something (Mesa de Entradas - FACULTY)" or "Something (FACULTY)"
+    match = re.match(r'^(.+?)\s*\((.+?)\)\s*$', text)
+    if match:
+        dep_name = match.group(1).strip()
+        paren_content = match.group(2).strip()
+
+        # Extract faculty from "Mesa de Entradas - FACULTY" pattern
+        mde_match = re.match(r'^Mesa de Entradas\s*-\s*(.+)$', paren_content)
+        if mde_match:
+            faculty = mde_match.group(1).strip()
+        else:
+            # Parentheses contain just the faculty name
+            faculty = paren_content
+
+        return dep_name, faculty
+
+    return text.strip(), None
+
+
 def normalize(dependencia: str, rules: NormalizationRules) -> str:
     """
     Normalize a dependency name using the provided rules.
 
-    Rules are applied in order of precedence:
-    1. explicit_override (checked first, highest precedence)
-    2. mesa_entradas
-    3. preserve_mde
-    4. strip_parentheses
-    4. identity (fallback)
+    The normalization preserves faculty information:
+    - "Despacho General (Mesa de Entradas - FBCB)" → "Despacho General (FBCB)"
+    - "Mesa de Entradas - FBCB" → "Mesa de Entradas - FBCB"
+    - "Mesa de Entradas" → "Mesa de Entradas" (no faculty info available)
 
     Args:
         dependencia: Raw dependency name from SUME
         rules: NormalizationRules object with rules and overrides
 
     Returns:
-        Normalized dependency name.
+        Normalized dependency name with faculty in parentheses when available.
 
     Guarantees:
         - Idempotent: normalize(normalize(x)) == normalize(x)
@@ -111,15 +139,19 @@ def normalize(dependencia: str, rules: NormalizationRules) -> str:
     if original in rules.explicit_overrides:
         return rules.explicit_overrides[original]
 
-    # Rule 2: Mesa de Entradas pattern
-    mesa_rule = rules.get_rule("mesa_entradas")
-    if mesa_rule and mesa_rule.pattern:
-        pattern = re.compile(mesa_rule.pattern)
-        if pattern.match(original):
-            result = pattern.sub(mesa_rule.replacement, original)
-            return result.strip()
+    # Rule 2: Parse parenthetical notation to extract faculty
+    dep_name, faculty = _extract_faculty_from_parentheses(original)
 
-    # Rule 3: Preserve MDE names
+    if faculty:
+        # We have faculty info - format appropriately
+        if dep_name.lower() in ("mesa de entradas", "mde", "m.d.e."):
+            # For Mesa de Entradas: "Mesa de Entradas - FACULTY"
+            return f"Mesa de Entradas - {faculty}"
+        else:
+            # For other deps: "Dependency Name (FACULTY)"
+            return f"{dep_name} ({faculty})"
+
+    # Rule 3: Preserve MDE names without faculty
     preserve_rule = rules.get_rule("preserve_mde")
     if preserve_rule and preserve_rule.patterns:
         for pattern_str in preserve_rule.patterns:
@@ -127,14 +159,7 @@ def normalize(dependencia: str, rules: NormalizationRules) -> str:
             if pattern.match(original):
                 return original
 
-    # Rule 4: Strip trailing parentheses
-    strip_rule = rules.get_rule("strip_parentheses")
-    if strip_rule and strip_rule.pattern:
-        pattern = re.compile(strip_rule.pattern)
-        result = pattern.sub(strip_rule.replacement, original)
-        return result.strip()
-
-    # Rule 5: Identity fallback
+    # Rule 4: Identity fallback - return as-is
     return original
 
 

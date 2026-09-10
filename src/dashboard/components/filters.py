@@ -136,27 +136,27 @@ def render_concepto_filter() -> list[str]:
     # Ensure current selection is valid
     current = [c for c in current if c in all_conceptos]
 
-    col1, col2, col3 = st.columns([3, 1, 1])
+    selected = st.multiselect(
+        "Conceptos",
+        options=all_conceptos,
+        default=current,
+        key="filter_conceptos",
+        help="Filtrar por tipo de trámite/concepto",
+        placeholder="Seleccionar conceptos...",
+    )
+
+    # Buttons below the multiselect for better readability
+    col1, col2 = st.columns(2)
 
     with col1:
-        selected = st.multiselect(
-            "Conceptos",
-            options=all_conceptos,
-            default=current,
-            key="filter_conceptos",
-            help="Filtrar por tipo de trámite/concepto",
-            placeholder="Seleccionar conceptos...",
-        )
-
-    with col2:
-        if st.button("Todos", key="btn_select_all_conceptos", use_container_width=True,
+        if st.button("Todos", key="btn_select_all_conceptos", width="stretch",
                      help="Seleccionar todos los conceptos"):
             selected = all_conceptos
             st.session_state[CONCEPTOS_KEY] = selected
             st.rerun()
 
-    with col3:
-        if st.button("Ninguno", key="btn_clear_all_conceptos", use_container_width=True,
+    with col2:
+        if st.button("Ninguno", key="btn_clear_all_conceptos", width="stretch",
                      help="Deseleccionar todos los conceptos"):
             selected = []
             st.session_state[CONCEPTOS_KEY] = selected
@@ -249,7 +249,7 @@ def render_global_filters_sidebar() -> FilterState:
         st.divider()
 
         # Reset button
-        if st.button("🔄 Restablecer filtros", use_container_width=True,
+        if st.button("🔄 Restablecer filtros", width="stretch",
                      help="Volver a valores por defecto (todo el año, todos los conceptos/dependencias)"):
             reset_filters()
             st.rerun()

@@ -70,67 +70,65 @@ def render_overview_page(filters: FilterState) -> None:
     st.divider()
 
     # --- Row 1: Expedientes by Concepto + Monthly Trend ---
-    col1, col2 = st.columns([1, 1])
+    st.subheader("Expedientes por Concepto")
+    if not concept_dist_df.empty:
+        fig = bar_chart_horizontal(
+            concept_dist_df.head(15),
+            x="cantidad",
+            y="concepto",
+            title="",
+            height=500,
+            hover_data=["porcentaje"],
+            max_label_length=22,
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("No hay datos de conceptos para mostrar.")
 
-    with col1:
-        st.subheader("Expedientes por Concepto")
-        if not concept_dist_df.empty:
-            fig = bar_chart_horizontal(
-                concept_dist_df.head(15),
-                x="cantidad",
-                y="concepto",
-                title="",
-                height=400,
-                hover_data=["porcentaje"],
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay datos de conceptos para mostrar.")
+    st.divider()
 
-    with col2:
-        st.subheader("Tendencia Mensual")
-        if not monthly_df.empty:
-            fig = line_chart_monthly(
-                monthly_df,
-                date_col="mes",
-                value_col="cantidad",
-                title="",
-                cumulative_col="acumulado",
-                height=400,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay datos mensuales para mostrar.")
+    st.subheader("Tendencia Mensual")
+    if not monthly_df.empty:
+        fig = line_chart_monthly(
+            monthly_df,
+            date_col="mes",
+            value_col="cantidad",
+            title="",
+            cumulative_col="acumulado",
+            height=450,
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("No hay datos mensuales para mostrar.")
 
     st.divider()
 
     # --- Row 2: Top 10 Dependencias + Concept Distribution Pie ---
-    col3, col4 = st.columns([1, 1])
+    st.subheader("Top 10 Dependencias por Tráfico")
+    if not dep_traffic_df.empty:
+        fig = dependency_traffic_bar(
+            dep_traffic_df,
+            title="",
+            top_n=10,
+            height=500,
+            max_label_length=22,
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("No hay datos de dependencias para mostrar.")
 
-    with col3:
-        st.subheader("Top 10 Dependencias por Tráfico")
-        if not dep_traffic_df.empty:
-            fig = dependency_traffic_bar(
-                dep_traffic_df,
-                title="",
-                top_n=10,
-                height=400,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay datos de dependencias para mostrar.")
+    st.divider()
 
-    with col4:
-        st.subheader("Distribución de Conceptos")
-        if not concept_dist_df.empty:
-            fig = concept_distribution_pie(
-                concept_dist_df.head(10),  # Top 10 for readability
-                title="",
-                height=400,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay distribución de conceptos para mostrar.")
+    st.subheader("Distribución de Conceptos")
+    if not concept_dist_df.empty:
+        fig = concept_distribution_pie(
+            concept_dist_df.head(10),
+            title="",
+            height=550,
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("No hay distribución de conceptos para mostrar.")
 
     # --- Data Table (expandable) ---
     with st.expander("📋 Ver tabla de expedientes filtrados"):
@@ -139,7 +137,7 @@ def render_overview_page(filters: FilterState) -> None:
         display_df["fecha_alta"] = display_df["fecha_alta"].dt.strftime("%Y-%m-%d")
         st.dataframe(
             display_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "numero": "Número",

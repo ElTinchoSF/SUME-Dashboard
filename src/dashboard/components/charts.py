@@ -2,9 +2,10 @@
 Reusable Plotly chart builders for SUME Dashboard.
 
 Provides consistent styling across all dashboard pages:
-- Modal circuits = green (#2E7D32)
+- FBCB institutional green: #00A94F (Pantone 355C)
+- UNL turquoise: #0088AA (Pantone 314C)
+- Modal circuits = green (#00A94F)
 - Atypical/outlier circuits = orange (#E65100)
-- Neutral = blue (#1565C0)
 - Background = light gray (#F5F5F5)
 """
 
@@ -17,20 +18,34 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 
 
-# Color palette - consistent across all charts
+# Color palette - FBCB institutional colors
 COLORS = {
-    "modal": "#2E7D32",      # Green for modal circuits
-    "atypical": "#E65100",   # Orange for atypical/outlier circuits
-    "primary": "#1565C0",    # Blue for primary metrics
-    "secondary": "#757575",  # Gray for secondary
-    "background": "#F5F5F5", # Light gray background
+    # FBCB institutional green (Pantone 355C)
+    "modal": "#00A94F",       # Green for modal circuits
+    "fbcb": "#00A94F",        # Primary FBCB green
+    "fbcb_hover": "#008C41",  # FBCB green hover
+    "fbcb_light": "#b2e8c4",  # FBCB green light
+    "fbcb_50": "#f0fdf4",     # FBCB green 50 (background)
+    "fbcb_100": "#dcfce7",    # FBCB green 100
+
+    # UNL institutional colors
+    "unl": "#0088AA",         # UNL turquoise (Pantone 314C)
+    "unl_dark": "#244C5A",    # UNL complement (Pantone 7477C)
+
+    # Semantic colors
+    "atypical": "#E65100",    # Orange for atypical/outlier circuits
+    "primary": "#00A94F",     # Primary = FBCB green
+    "secondary": "#575756",   # Gray (accompanying gray K:80)
+    "background": "#F5F5F5",  # Light gray background
     "white": "#FFFFFF",
     "text": "#212121",
     "grid": "#E0E0E0",
-    "kpi_blue": "#1976D2",
-    "kpi_green": "#388E3C",
-    "kpi_orange": "#F57C00",
-    "kpi_purple": "#7B1FA2",
+
+    # KPI card colors
+    "kpi_green": "#00A94F",   # FBCB green
+    "kpi_blue": "#0088AA",    # UNL turquoise
+    "kpi_orange": "#E65100",  # Orange (outliers)
+    "kpi_purple": "#7B1FA2",  # Purple (accent)
 }
 
 # Common layout settings
@@ -80,9 +95,10 @@ def bar_chart_horizontal(df: pd.DataFrame, x: str, y: str, title: str = "",
                          color_map: Optional[dict] = None,
                          height: int = 400,
                          text_auto: bool = True,
-                         hover_data: Optional[list] = None) -> go.Figure:
+                         hover_data: Optional[list] = None,
+                         max_label_length: int = 25) -> go.Figure:
     """
-    Create a horizontal bar chart.
+    Create a horizontal bar chart with truncated labels for readability.
 
     Args:
         df: DataFrame with data.
@@ -94,12 +110,20 @@ def bar_chart_horizontal(df: pd.DataFrame, x: str, y: str, title: str = "",
         height: Chart height in pixels.
         text_auto: Show value labels on bars.
         hover_data: Additional columns to show on hover.
+        max_label_length: Maximum character length for y-axis labels.
 
     Returns:
         Plotly Figure object.
     """
+    # Truncate long labels for display
+    display_df = df.copy()
+    original_labels = display_df[y].copy()
+    display_df[y] = display_df[y].apply(
+        lambda label: label[:max_label_length] + "..." if len(str(label)) > max_label_length else label
+    )
+
     fig = px.bar(
-        df,
+        display_df,
         x=x,
         y=y,
         orientation="h",
@@ -238,9 +262,10 @@ def histogram_steps(df: pd.DataFrame, bins: int = 20, title: str = "",
 def boxplot_permanence(df: pd.DataFrame, x: str, y: str, title: str = "",
                        height: int = 500,
                        points: str = "outliers",
-                       notched: bool = False) -> go.Figure:
+                       notched: bool = False,
+                       max_label_length: int = 22) -> go.Figure:
     """
-    Create a boxplot of permanence days by dependencia.
+    Create a boxplot of permanence days by dependencia with truncated labels.
 
     Args:
         df: DataFrame with permanence data.
@@ -250,12 +275,19 @@ def boxplot_permanence(df: pd.DataFrame, x: str, y: str, title: str = "",
         height: Chart height.
         points: "outliers", "suspectedoutliers", "all", or False.
         notched: Show notched boxplot.
+        max_label_length: Maximum character length for x-axis labels.
 
     Returns:
         Plotly Figure object.
     """
+    # Truncate long labels for readability
+    display_df = df.copy()
+    display_df[x] = display_df[x].apply(
+        lambda label: label[:max_label_length] + "..." if len(str(label)) > max_label_length else label
+    )
+
     fig = px.box(
-        df,
+        display_df,
         x=x,
         y=y,
         points=points,
@@ -518,7 +550,8 @@ def circuit_frequency_table(circuits_df: pd.DataFrame, title: str = "",
 
 def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
                            top_n: int = 10,
-                           height: int = 400) -> go.Figure:
+                           height: int = 400,
+                           max_label_length: int = 22) -> go.Figure:
     """
     Create horizontal bar chart for top N dependencias by traffic.
 
@@ -527,12 +560,16 @@ def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
         title: Chart title.
         top_n: Number of top dependencias to show.
         height: Chart height.
+        max_label_length: Maximum character length for labels.
 
     Returns:
         Plotly Figure object.
     """
     top_df = df.head(top_n).copy()
-    top_df["label"] = top_df["dependencia"] + " (" + top_df["pct_expedientes"].astype(str) + "%)"
+    # Truncate dependency names for readability
+    top_df["label"] = top_df["dependencia"].apply(
+        lambda dep: dep[:max_label_length] + "..." if len(dep) > max_label_length else dep
+    ) + " (" + top_df["pct_expedientes"].astype(str) + "%)"
 
     return bar_chart_horizontal(
         top_df,
@@ -541,6 +578,7 @@ def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
         title=title,
         height=height,
         hover_data=["pct_expedientes", "total_movimientos"],
+        max_label_length=max_label_length + 10,  # Account for percentage suffix
     )
 
 

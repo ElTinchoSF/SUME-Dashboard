@@ -26,6 +26,8 @@ def reconstruct_circuit(expediente: ExpedienteDict, movimientos: list[Movimiento
 
     Injects the MDE (Mesa de Entradas) step as orden 0 using the expediente's
     fecha_alta, then appends all movimientos in chronological order.
+    Filters out consecutive duplicate dependencies, keeping the one with
+    the oldest fecha_recepcion.
 
     Args:
         expediente: Expediente dictionary with numero, concepto, fecha_alta, etc.
@@ -35,7 +37,7 @@ def reconstruct_circuit(expediente: ExpedienteDict, movimientos: list[Movimiento
         Ordered list of dependency names representing the circuit.
         First element is always the MDE step.
     """
-    # Sort movimientos by orden to ensure chronological order
+    # Sort movimientos by orden (now correct: 1 = oldest, N = newest)
     sorted_movimientos = sorted(movimientos, key=lambda m: m["orden"])
 
     # Build MDE step name - use the faculty from config or expediente origenes
@@ -46,11 +48,18 @@ def reconstruct_circuit(expediente: ExpedienteDict, movimientos: list[Movimiento
     # Start circuit with MDE injection (orden 0)
     circuit = [mde_step]
 
-    # Append normalized dependency names from movimientos
+    # Filter consecutive duplicates, keeping the one with oldest fecha_recepcion
     for mov in sorted_movimientos:
         dependencia = mov["dependencia"]
-        if dependencia:
-            circuit.append(dependencia)
+        if not dependencia:
+            continue
+
+        # Check if this is a consecutive duplicate
+        if circuit and dependencia == circuit[-1]:
+            # Same as previous step - skip (consecutive duplicate)
+            continue
+
+        circuit.append(dependencia)
 
     return circuit
 

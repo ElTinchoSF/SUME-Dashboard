@@ -74,9 +74,10 @@ def render_circuitos_page(filters: FilterState) -> None:
         st.warning(f"No hay circuitos registrados para el concepto '{selected_concepto}'.")
         return
 
-    # Separate modal and non-modal
-    modal_df = circuitos_df[circuitos_df["es_mas_frecuente"]]
-    other_df = circuitos_df[~circuitos_df["es_mas_frecuente"]]
+    # Separate modal and non-modal (es_mas_frecuente is 0/1 int from SQLite)
+    is_modal = circuitos_df["es_mas_frecuente"].astype(bool)
+    modal_df = circuitos_df[is_modal]
+    other_df = circuitos_df[~is_modal]
 
     if view_mode == "Solo Modal":
         _render_modal_view(modal_df, selected_concepto)
@@ -133,7 +134,7 @@ def _render_modal_view(modal_df: pd.DataFrame, concepto: str) -> None:
         title=f"Circuito Modal: {concepto}",
         height=500,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Show circuit as text
     st.caption("**Secuencia del circuito:**")
@@ -155,13 +156,13 @@ def _render_all_circuits_view(circuitos_df: pd.DataFrame, concepto: str) -> None
     with col2:
         st.metric("Total Expedientes", f"{total_expedientes:,}")
     with col3:
-        modal_count = circuitos_df[circuitos_df["es_mas_frecuente"]]["frecuencia"].sum()
+        modal_count = circuitos_df[circuitos_df["es_mas_frecuente"].astype(bool)]["frecuencia"].sum()
         st.metric("Cobertura Modal", f"{modal_count/total_expedientes*100:.1f}%" if total_expedientes > 0 else "0%")
 
     # Parallel sets diagram
     st.caption("Diagrama de Conjuntos Paralelos (circuitos ordenados por frecuencia)")
     fig = parallel_sets(circuitos_df, title="", height=550, max_circuits=12)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Frequency table
     st.caption("Tabla de frecuencias (ordenada descendente)")
@@ -188,7 +189,7 @@ def _render_frequency_table(circuitos_df: pd.DataFrame) -> None:
 
     st.dataframe(
         display_df[["Modal", "Circuito", "Frecuencia", "%"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Modal": st.column_config.TextColumn("", width="small"),

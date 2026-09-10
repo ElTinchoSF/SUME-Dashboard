@@ -122,18 +122,27 @@ def load_expedientes(filters: FilterState) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando circuitos...")
-def load_circuitos(concepto: Optional[str] = None) -> pd.DataFrame:
+def load_circuitos(concepto: Optional[str] = None, filters: Optional[FilterState] = None) -> pd.DataFrame:
     """
-    Load circuitos with optional concepto filter.
+    Load circuitos with optional concepto and date filters.
+
+    When filters are applied, re-computes circuits on-the-fly from filtered expedientes
+    instead of reading from the pre-computed circuitos table.
 
     Args:
         concepto: Optional concepto to filter by. If None, loads all.
+        filters: Optional FilterState with date_range, conceptos, dependencias.
 
     Returns:
         DataFrame with columns: id, circuito (JSON), concepto, frecuencia, es_mas_frecuente
     """
     db = get_connection()
 
+    # If filters are applied (especially date), re-compute circuits on-the-fly
+    if filters and (filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias):
+        return _compute_circuitos_with_filters(db, concepto, filters)
+
+    # No filters: use pre-computed circuitos table
     if concepto is not None:
         query = "SELECT id, circuito, concepto, frecuencia, es_mas_frecuente FROM circuitos WHERE concepto = ? ORDER BY frecuencia DESC"
         df = pd.read_sql_query(query, db, params=[concepto])
@@ -146,46 +155,178 @@ def load_circuitos(concepto: Optional[str] = None) -> pd.DataFrame:
         df["circuito_parsed"] = df["circuito"].apply(
             lambda x: json.loads(x) if isinstance(x, str) else []
         )
+        df["circuito_json"] = df["circuito"]  # Keep original JSON string for display
         df["step_count"] = df["circuito_parsed"].apply(len)
 
     return df
 
 
+def _compute_circuitos_with_filters(
+    db: sqlite3.Connection,
+    concepto: Optional[str],
+    filters: FilterState,
+) -> pd.DataFrame:
+    """
+    Re-compute circuits on-the-fly from filtered expedientes.
+
+    This ensures circuits reflect only expedientes within the date range.
+    """
+    from src.analysis.circuits import reconstruct_circuit, identify_modal_circuits
+
+    # Build WHERE clause for filters
+    where_clauses = []
+    params = []
+
+    # Date range filter on expedientes.fecha_alta
+    if filters.date_range[0] is not None:
+        where_clauses.append("e.fecha_alta >= ?")
+        params.append(filters.date_range[0])
+    if filters.date_range[1] is not None:
+        where_clauses.append("e.fecha_alta <= ?")
+        params.append(filters.date_range[1])
+
+    # Concepto filter
+    if filters.conceptos:
+        placeholders = ",".join("?" * len(filters.conceptos))
+        where_clauses.append(f"e.concepto IN ({placeholders})")
+        params.extend(filters.conceptos)
+
+    # Dependencia filter
+    if filters.dependencias:
+        placeholders = ",".join("?" * len(filters.dependencias))
+        where_clauses.append(f"""
+            e.id IN (
+                SELECT DISTINCT expediente_id
+                FROM movimientos
+                WHERE dependencia IN ({placeholders})
+            )
+        """)
+        params.extend(filters.dependencias)
+
+    # Additional concepto filter from function parameter
+    if concepto is not None:
+        where_clauses.append("e.concepto = ?")
+        params.append(concepto)
+
+    where_clause = ""
+    if where_clauses:
+        where_clause = "WHERE " + " AND ".join(where_clauses)
+
+    # Query expedientes with their movimientos
+    query = f"""
+        SELECT
+            e.id as expediente_id,
+            e.numero,
+            e.concepto,
+            e.fecha_alta,
+            m.orden,
+            m.fecha_recepcion,
+            m.dependencia
+        FROM expedientes e
+        LEFT JOIN movimientos m ON e.id = m.expediente_id
+        {where_clause}
+        ORDER BY e.concepto, e.id, m.orden
+    """
+
+    df = pd.read_sql_query(query, db, params=params)
+
+    if df.empty:
+        return pd.DataFrame(columns=["id", "circuito", "circuito_json", "circuito_parsed",
+                                     "concepto", "frecuencia", "es_mas_frecuente", "step_count"])
+
+    # Group by expediente to reconstruct circuits
+    circuits_by_concepto: dict[str, list[list[str]]] = {}
+
+    for expediente_id, group in df.groupby("expediente_id"):
+        first_row = group.iloc[0]
+        concepto_name = first_row["concepto"]
+        fecha_alta = first_row["fecha_alta"]
+
+        expediente = {
+            "id": int(expediente_id),
+            "numero": first_row["numero"],
+            "concepto": concepto_name,
+            "fecha_alta": fecha_alta,
+        }
+
+        movimientos = []
+        for _, row in group.iterrows():
+            if pd.notna(row["orden"]):
+                movimientos.append({
+                    "orden": int(row["orden"]),
+                    "fecha_recepcion": row["fecha_recepcion"],
+                    "dependencia": row["dependencia"],
+                })
+
+        circuit = reconstruct_circuit(expediente, movimientos)
+
+        if concepto_name not in circuits_by_concepto:
+            circuits_by_concepto[concepto_name] = []
+        circuits_by_concepto[concepto_name].append(circuit)
+
+    # Compute frequencies
+    rows = []
+    for concepto_name, circuits in circuits_by_concepto.items():
+        circuit_counts = {}
+        for circuit in circuits:
+            circuit_key = json.dumps(circuit, ensure_ascii=False)
+            circuit_counts[circuit_key] = circuit_counts.get(circuit_key, 0) + 1
+
+        for circuit_json_str, freq in circuit_counts.items():
+            rows.append({
+                "circuito": circuit_json_str,
+                "concepto": concepto_name,
+                "frecuencia": freq,
+                "es_mas_frecuente": False,
+            })
+
+    result_df = pd.DataFrame(rows)
+
+    if not result_df.empty:
+        # Identify modal circuits per concepto
+        result_df = identify_modal_circuits(result_df)
+
+        # Parse circuito JSON
+        result_df["circuito_parsed"] = result_df["circuito"].apply(
+            lambda x: json.loads(x) if isinstance(x, str) else []
+        )
+        result_df["circuito_json"] = result_df["circuito"]
+        result_df["step_count"] = result_df["circuito_parsed"].apply(len)
+        result_df["id"] = range(1, len(result_df) + 1)
+
+    return result_df
+
+
 @st.cache_data(ttl=300, show_spinner="Cargando estadísticas de pasos...")
-def load_step_stats(concepto: Optional[str] = None) -> pd.DataFrame:
+def load_step_stats(concepto: Optional[str] = None, filters: Optional[FilterState] = None) -> pd.DataFrame:
     """
     Load step count statistics per concepto.
 
+    When filters are applied, re-computes statistics from filtered circuits.
+
     Args:
         concepto: Optional concepto to filter by. If None, loads all.
+        filters: Optional FilterState with date_range, conceptos, dependencias.
 
     Returns:
         DataFrame with columns: concepto, min_steps, max_steps, mean_steps,
         median_steps, mode_steps, std_steps, total_circuitos, total_expedientes
     """
+    # If filters are applied, use filtered circuits
+    if filters and (filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias):
+        circuitos_df = load_circuitos(concepto, filters)
+        if circuitos_df.empty:
+            return pd.DataFrame(columns=[
+                "concepto", "min_steps", "max_steps", "mean_steps", "median_steps",
+                "mode_steps", "std_steps", "total_circuitos", "total_expedientes"
+            ])
+        # Build freq_df from circuitos
+        freq_df = circuitos_df[["circuito", "concepto", "frecuencia"]].copy()
+        return _compute_step_stats_from_freq(freq_df)
+
     db = get_connection()
 
     if concepto is not None:
-        query = """
-            SELECT concepto, min_steps, max_steps, mean_steps, median_steps,
-                   mode_steps, std_steps, total_circuitos, total_expedientes
-            FROM circuitos c
-            JOIN (
-                SELECT
-                    concepto,
-                    MIN(json_array_length(circuito)) as min_steps,
-                    MAX(json_array_length(circuito)) as max_steps,
-                    AVG(json_array_length(circuito)) as mean_steps,
-                    -- SQLite doesn't have built-in median/mode, compute in Python
-                    0 as median_steps, 0 as mode_steps, 0 as std_steps,
-                    COUNT(*) as total_circuitos,
-                    SUM(frecuencia) as total_expedientes
-                FROM circuitos
-                WHERE concepto = ?
-                GROUP BY concepto
-            ) USING (concepto)
-        """
-        # We'll compute median/mode/std in Python instead
         return _compute_step_stats_for_concepto(db, concepto)
 
     # Load all and compute in Python
@@ -203,7 +344,7 @@ def load_step_stats(concepto: Optional[str] = None) -> pd.DataFrame:
 
 def _compute_step_stats_for_concepto(db: sqlite3.Connection, concepto: str) -> pd.DataFrame:
     """Compute step stats for a single concepto from database."""
-    query = "SELECT circuito, frecuencia FROM circuitos WHERE concepto = ?"
+    query = "SELECT concepto, circuito, frecuencia FROM circuitos WHERE concepto = ?"
     freq_df = pd.read_sql_query(query, db, params=[concepto])
     return _compute_step_stats_from_freq(freq_df)
 
@@ -259,12 +400,15 @@ def _compute_step_stats_from_freq(freq_df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando tiempos de permanencia...")
-def load_permanence(concepto: Optional[str] = None) -> pd.DataFrame:
+def load_permanence(concepto: Optional[str] = None, filters: Optional[FilterState] = None) -> pd.DataFrame:
     """
     Load permanence times between consecutive steps.
 
+    When filters are applied, re-computes permanence from filtered expedientes.
+
     Args:
         concepto: Optional concepto to filter by. If None, loads all.
+        filters: Optional FilterState with date_range, conceptos, dependencias.
 
     Returns:
         DataFrame with columns: expediente_id, numero, concepto, orden,
@@ -272,35 +416,60 @@ def load_permanence(concepto: Optional[str] = None) -> pd.DataFrame:
     """
     db = get_connection()
 
+    # Build WHERE clause for filters
+    where_clauses = []
+    params = []
+
+    # Date range filter on expedientes.fecha_alta
+    if filters and filters.date_range[0] is not None:
+        where_clauses.append("e.fecha_alta >= ?")
+        params.append(filters.date_range[0])
+    if filters and filters.date_range[1] is not None:
+        where_clauses.append("e.fecha_alta <= ?")
+        params.append(filters.date_range[1])
+
+    # Concepto filter from filters
+    if filters and filters.conceptos:
+        placeholders = ",".join("?" * len(filters.conceptos))
+        where_clauses.append(f"e.concepto IN ({placeholders})")
+        params.extend(filters.conceptos)
+
+    # Dependencia filter
+    if filters and filters.dependencias:
+        placeholders = ",".join("?" * len(filters.dependencias))
+        where_clauses.append(f"""
+            e.id IN (
+                SELECT DISTINCT expediente_id
+                FROM movimientos
+                WHERE dependencia IN ({placeholders})
+            )
+        """)
+        params.extend(filters.dependencias)
+
+    # Additional concepto filter from function parameter
     if concepto is not None:
-        query = """
-            SELECT
-                e.id as expediente_id,
-                e.numero,
-                e.concepto,
-                m.orden,
-                m.fecha_recepcion,
-                m.dependencia
-            FROM expedientes e
-            JOIN movimientos m ON e.id = m.expediente_id
-            WHERE e.concepto = ?
-            ORDER BY e.id, m.orden
-        """
-        df = pd.read_sql_query(query, db, params=[concepto])
-    else:
-        query = """
-            SELECT
-                e.id as expediente_id,
-                e.numero,
-                e.concepto,
-                m.orden,
-                m.fecha_recepcion,
-                m.dependencia
-            FROM expedientes e
-            JOIN movimientos m ON e.id = m.expediente_id
-            ORDER BY e.id, m.orden
-        """
-        df = pd.read_sql_query(query, db)
+        where_clauses.append("e.concepto = ?")
+        params.append(concepto)
+
+    where_clause = ""
+    if where_clauses:
+        where_clause = "WHERE " + " AND ".join(where_clauses)
+
+    query = f"""
+        SELECT
+            e.id as expediente_id,
+            e.numero,
+            e.concepto,
+            m.orden,
+            m.fecha_recepcion,
+            m.dependencia
+        FROM expedientes e
+        JOIN movimientos m ON e.id = m.expediente_id
+        {where_clause}
+        ORDER BY e.id, m.orden
+    """
+
+    df = pd.read_sql_query(query, db, params=params)
 
     if df.empty:
         return pd.DataFrame(columns=[
