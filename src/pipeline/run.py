@@ -60,12 +60,9 @@ def run_scraper(max_pages: Optional[int] = None, date_from: Optional[str] = None
     print(f"Running scraper phase{' (max ' + str(max_pages) + ' pages)' if max_pages else ''}...")
     if date_from or date_to:
         print(f"  - Date filter: {date_from or '...'} to {date_to or '...'}")
-    report = scrape(max_pages=max_pages)
+        print(f"  - Using advanced search with date filters")
+    report = scrape(max_pages=max_pages, date_from=date_from, date_to=date_to)
     report.print_summary()
-
-    # Apply date filter if specified
-    if date_from or date_to:
-        _filter_expedientes_by_date(date_from, date_to)
 
     return 1 if report.has_critical_errors() else 0
 

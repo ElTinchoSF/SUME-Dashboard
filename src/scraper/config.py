@@ -90,17 +90,73 @@ class ScraperConfig(BaseSettings):
         """Construct a detail page URL from the expediente numero."""
         return f"{self.base_url.rstrip('/')}/{self.detail_path}/{numero}"
 
-    def get_search_params(self) -> dict:
+    def get_search_params(self, date_from: Optional[str] = None, date_to: Optional[str] = None) -> dict:
         """
-        Build search parameters for SUME header search.
+        Build search parameters for SUME search.
+
+        Uses advanced search with date filters when dates are provided.
+        Falls back to simple header search when no dates.
+
+        Args:
+            date_from: Filter expedientes created from this date (YYYY-MM-DD).
+            date_to: Filter expedientes created up to this date (YYYY-MM-DD).
 
         Returns:
-            Dictionary of form data for the header search.
+            Dictionary of form data for the search.
         """
+        # If date filters are provided, use advanced search form
+        if date_from or date_to:
+            return self._get_advanced_search_params(date_from, date_to)
+
+        # Default: simple header search
         return {
             "header_search": "numero",
             "header_search_text": self.faculty_filter,
         }
+
+    def _get_advanced_search_params(self, date_from: Optional[str] = None, date_to: Optional[str] = None) -> dict:
+        """
+        Build advanced search parameters with date filters.
+
+        ALL form fields must be included (even empty ones) for SUME to process the search.
+        When mesa de entrada is selected, the office dropdown auto-selects the same ID.
+
+        Args:
+            date_from: Filter expedientes created from this date (YYYY-MM-DD).
+            date_to: Filter expedientes created up to this date (YYYY-MM-DD).
+
+        Returns:
+            Dictionary of form data for the advanced search.
+        """
+        from datetime import datetime
+
+        # ALL form fields must be included (even empty ones)
+        # oficina=5 is critical: when Mesa de Entradas - FBCB is selected,
+        # the JS auto-selects the same office in the oficina dropdown
+        params = {
+            "numero": "",
+            "descripcion": "",
+            "palabraClave": "",
+            "selectOrigen": "interno",
+            "mesaEntrada": "5",
+            "oficina": "5",  # Auto-selected by JS when mesa de entrada = FBCB
+            "concepto": "",
+            "fechaCdesde": "",
+            "fechaChasta": "",
+            "tipoDR": "",
+            "numeroDR": "",
+        }
+
+        # Convert dates from YYYY-MM-DD to DD/MM/YYYY for SUME
+        if date_from:
+            dt = datetime.strptime(date_from, "%Y-%m-%d")
+            params["fechaCdesde"] = dt.strftime("%d/%m/%Y")
+
+        if date_to:
+            dt = datetime.strptime(date_to, "%Y-%m-%d")
+            params["fechaChasta"] = dt.strftime("%d/%m/%Y")
+
+        return params
 
     def get_page_url(self, page: int) -> str:
         """

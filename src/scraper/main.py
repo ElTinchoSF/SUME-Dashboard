@@ -150,19 +150,25 @@ class ScraperOrchestrator:
         self.normalizer_rules = get_normalizer(Path(self.config.normalization_rules_path))
         self.stats = ScraperStats()
         self.validation_report = ValidationReport(stats=self.stats)
+        self._date_from: Optional[str] = None
+        self._date_to: Optional[str] = None
 
-    def run(self, max_pages: Optional[int] = None) -> ValidationReport:
+    def run(self, max_pages: Optional[int] = None, date_from: Optional[str] = None, date_to: Optional[str] = None) -> ValidationReport:
         """
         Execute the complete scraping workflow.
 
         Args:
             max_pages: Maximum number of pages to scrape (None for all)
+            date_from: Filter expedientes created from this date (YYYY-MM-DD)
+            date_to: Filter expedientes created up to this date (YYYY-MM-DD)
 
         Returns:
             ValidationReport with statistics and any issues found.
         """
         self.stats.start_time = time.time()
-        logger.info(f"Starting scraper run (max_pages={max_pages})")
+        self._date_from = date_from
+        self._date_to = date_to
+        logger.info(f"Starting scraper run (max_pages={max_pages}, date_from={date_from}, date_to={date_to})")
 
         try:
             # Step 1: Fetch first page to get total pages
@@ -185,16 +191,18 @@ class ScraperOrchestrator:
                 logger.info(f"Limiting to {total_pages} pages")
 
             # Process first page expedientes
-            self._process_listing_expedientes(first_listing.expedientes, 1)
+            stop_scraping = self._process_listing_expedientes(first_listing.expedientes, 1)
 
-            # Step 2: Process remaining pages
-            for page_num in range(2, total_pages + 1):
+            # Step 2: Process remaining pages (stop if we hit date cutoff)
+            page_num = 2
+            while page_num <= total_pages and not stop_scraping:
                 logger.info(f"Fetching page {page_num}/{total_pages}")
 
                 page_result = self._fetch_listing_page(page_num)
                 if not page_result:
                     logger.error(f"Failed to fetch page {page_num}")
                     self.stats.http_errors += 1
+                    page_num += 1
                     continue
 
                 # Parse page
@@ -203,10 +211,11 @@ class ScraperOrchestrator:
                     self.config.base_url,
                 )
 
-                # Process expedientes from this page
-                self._process_listing_expedientes(listing.expedientes, page_num)
+                # Process expedientes from this page (stop if before date_from)
+                stop_scraping = self._process_listing_expedientes(listing.expedientes, page_num)
 
                 self.stats.pages_scraped += 1
+                page_num += 1
 
             # Generate validation report
             self._generate_validation_report()
@@ -236,8 +245,11 @@ class ScraperOrchestrator:
             HTML content or None on error
         """
         if page_num == 1:
-            # First page: use header search
-            search_params = self.config.get_search_params()
+            # First page: use search with optional date filters
+            search_params = self.config.get_search_params(
+                date_from=self._date_from,
+                date_to=self._date_to
+            )
             result = self.client.search(search_params)
         else:
             # Subsequent pages: use page URL
@@ -257,7 +269,7 @@ class ScraperOrchestrator:
 
         return result.content
 
-    def _process_listing_expedientes(self, expedientes: list[ExpedienteDict], page_num: int) -> None:
+    def _process_listing_expedientes(self, expedientes: list[ExpedienteDict], page_num: int) -> bool:
         """
         Process expedientes from a listing page.
 
@@ -269,9 +281,51 @@ class ScraperOrchestrator:
         Args:
             expedientes: List of ExpedienteDict from listing page
             page_num: Current page number (for logging)
+
+        Returns:
+            True if we should stop scraping (all expedientes on page are before date_from), False otherwise
         """
+        from datetime import datetime
+
+        # Parse dates for comparison
+        date_from_dt = None
+        date_to_dt = None
+        if self._date_from:
+            date_from_dt = datetime.strptime(self._date_from, "%Y-%m-%d").date()
+        if self._date_to:
+            date_to_dt = datetime.strptime(self._date_to, "%Y-%m-%d").date()
+
+        # Track if ALL expedientes on this page are before date_from
+        all_before_date_from = True
+        expedientes_processed = 0
+
         for i, expediente in enumerate(expedientes, 1):
             logger.debug(f"Processing {expediente.numero} ({i}/{len(expedientes)} on page {page_num})")
+
+            # Check date range
+            if expediente.fecha_alta:
+                try:
+                    expediente_date = datetime.strptime(expediente.fecha_alta, "%Y-%m-%d").date()
+
+                    # Skip if before date_from (don't stop yet, check all on page)
+                    if date_from_dt and expediente_date < date_from_dt:
+                        logger.debug(f"Skipping expediente before date_from ({expediente.fecha_alta} < {self._date_from})")
+                        continue  # Skip this expediente
+
+                    # Skip if after date_to (continue to older expedientes)
+                    if date_to_dt and expediente_date > date_to_dt:
+                        logger.debug(f"Skipping expediente after date_to ({expediente.fecha_alta} > {self._date_to})")
+                        continue
+
+                    # This expediente is in range
+                    all_before_date_from = False
+
+                except (ValueError, TypeError):
+                    # If date parsing fails, assume it's in range
+                    all_before_date_from = False
+            else:
+                # No date, assume it's in range
+                all_before_date_from = False
 
             try:
                 # Fetch detail page for movimientos
@@ -290,6 +344,7 @@ class ScraperOrchestrator:
                 # Update stats
                 self.stats.total_expedientes += 1
                 self.stats.total_movimientos += len(movimientos)
+                expedientes_processed += 1
 
                 if len(movimientos) == 0:
                     self.stats.expedientes_with_zero_movimientos += 1
@@ -302,6 +357,14 @@ class ScraperOrchestrator:
                     "url": expediente.detail_url,
                     "error": str(e),
                 })
+
+        # Stop scraping only if ALL expedientes on this page were before date_from
+        # (not after date_to - those are just too recent, we need to keep going)
+        if all_before_date_from and len(expedientes) > 0:
+            logger.info(f"All expedientes on page {page_num} are before date_from ({self._date_from}). Stopping scrape.")
+            return True
+
+        return False  # Continue scraping
 
     def _fetch_and_parse_movimientos(self, expediente: ExpedienteDict) -> list[MovimientoDict]:
         """
@@ -417,7 +480,7 @@ class ScraperOrchestrator:
         logger.info("Scraper run completed", extra=self.stats.to_dict())
 
 
-def run_scraper(year: int = 2025, semester: Optional[int] = None, max_pages: Optional[int] = None) -> ValidationReport:
+def run_scraper(year: int = 2025, semester: Optional[int] = None, max_pages: Optional[int] = None, date_from: Optional[str] = None, date_to: Optional[str] = None) -> ValidationReport:
     """
     Convenience function to run the scraper.
 
@@ -425,12 +488,14 @@ def run_scraper(year: int = 2025, semester: Optional[int] = None, max_pages: Opt
         year: Year to scrape (default 2025, kept for compatibility)
         semester: Semester to scrape (kept for compatibility, not used in new SUME)
         max_pages: Maximum pages to scrape (None for all)
+        date_from: Filter expedientes created from this date (YYYY-MM-DD)
+        date_to: Filter expedientes created up to this date (YYYY-MM-DD)
 
     Returns:
         ValidationReport with results.
     """
     orchestrator = ScraperOrchestrator()
-    return orchestrator.run(max_pages=max_pages)
+    return orchestrator.run(max_pages=max_pages, date_from=date_from, date_to=date_to)
 
 
 def run_scraper_cli(args: list[str]) -> int:

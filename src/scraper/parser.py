@@ -129,12 +129,20 @@ def parse_listing_page(html: str, base_url: str, selectors: Optional[SelectorCon
         current_page = 1
         for link in links:
             text = link.get_text(strip=True)
+            # Handle regular page numbers
             if text.isdigit():
                 page_num = int(text)
                 max_page = max(max_page, page_num)
                 # Check if this link is active (current page)
                 if "active" in " ".join(link.get("class", [])):
                     current_page = page_num
+            # Handle "...9104" style pagination (SUME shows total pages)
+            elif text.startswith("..."):
+                try:
+                    total_from_ellipsis = int(text[3:])
+                    max_page = max(max_page, total_from_ellipsis)
+                except ValueError:
+                    pass
 
         total_pages = max_page
 
