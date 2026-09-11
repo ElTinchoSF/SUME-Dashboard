@@ -19,13 +19,24 @@ CONCEPTOS_KEY = "selected_conceptos"
 DEPENDENCIAS_KEY = "selected_dependencias"
 
 
+def _get_default_year() -> int:
+    """Get the default year based on available data in the database."""
+    from src.dashboard.data import _get_data_year_range
+    min_year, max_year = _get_data_year_range()
+    if min_year and max_year:
+        # Use the latest year with data
+        return max_year
+    # Fallback to current year
+    return date.today().year
+
+
 def init_filter_state() -> None:
     """Initialize filter state in session if not present."""
     if FILTER_KEY not in st.session_state:
-        # Default to full year range
-        today = date.today()
-        start_of_year = date(today.year, 1, 1)
-        end_of_year = date(today.year, 12, 31)
+        # Default to year with available data
+        default_year = _get_default_year()
+        start_of_year = date(default_year, 1, 1)
+        end_of_year = date(default_year, 12, 31)
 
         st.session_state[FILTER_KEY] = FilterState(
             date_range=(start_of_year.isoformat(), end_of_year.isoformat()),
@@ -51,9 +62,9 @@ def set_filter_state(filters: FilterState) -> None:
 
 def reset_filters() -> None:
     """Reset all filters to defaults."""
-    today = date.today()
-    start_of_year = date(today.year, 1, 1)
-    end_of_year = date(today.year, 12, 31)
+    default_year = _get_default_year()
+    start_of_year = date(default_year, 1, 1)
+    end_of_year = date(default_year, 12, 31)
 
     st.session_state[FILTER_KEY] = FilterState(
         date_range=(start_of_year.isoformat(), end_of_year.isoformat()),
@@ -228,27 +239,74 @@ def render_global_filters_sidebar() -> FilterState:
     init_filter_state()
 
     with st.sidebar:
-        st.header("🔍 Filtros Globales")
+        # Filters section header - matching FBCB institutional style
+        st.markdown("""
+            <div style="
+                background-color: #f0fdf4;
+                border-left: 4px solid #00A94F;
+                padding: 0.8rem 1rem;
+                margin-bottom: 1rem;
+                border-radius: 0 6px 6px 0;
+            ">
+                <h3 style="
+                    margin: 0;
+                    color: #244C5A;
+                    font-family: 'Montserrat', sans-serif;
+                    font-weight: 600;
+                    font-size: 1rem;
+                ">🔍 Filtros Globales</h3>
+            </div>
+        """, unsafe_allow_html=True)
 
         # Date range
-        st.subheader("📅 Rango de fechas")
+        st.markdown("""
+            <div style="
+                color: #00A94F;
+                font-family: 'Montserrat', sans-serif;
+                font-weight: 500;
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 0.5rem;
+            ">📅 Rango de fechas</div>
+        """, unsafe_allow_html=True)
         render_date_range_filter()
 
         st.divider()
 
         # Concepto filter
-        st.subheader("📋 Conceptos")
+        st.markdown("""
+            <div style="
+                color: #00A94F;
+                font-family: 'Montserrat', sans-serif;
+                font-weight: 500;
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 0.5rem;
+            ">📋 Conceptos</div>
+        """, unsafe_allow_html=True)
         render_concepto_filter()
 
         st.divider()
 
         # Dependencia filter
-        st.subheader("🏢 Dependencias")
+        st.markdown("""
+            <div style="
+                color: #00A94F;
+                font-family: 'Montserrat', sans-serif;
+                font-weight: 500;
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 0.5rem;
+            ">🏢 Dependencias</div>
+        """, unsafe_allow_html=True)
         render_dependencia_filter()
 
         st.divider()
 
-        # Reset button
+        # Reset button - institutional green
         if st.button("🔄 Restablecer filtros", width="stretch",
                      help="Volver a valores por defecto (todo el año, todos los conceptos/dependencias)"):
             reset_filters()
@@ -265,7 +323,20 @@ def render_global_filters_sidebar() -> FilterState:
             active_count += 1
 
         if active_count > 0:
-            st.caption(f"🔍 {active_count} filtro{'s' if active_count > 1 else ''} activo{'s' if active_count > 1 else ''}")
+            st.markdown(f"""
+                <div style="
+                    background-color: #dcfce7;
+                    border-radius: 6px;
+                    padding: 0.5rem 0.8rem;
+                    margin-top: 0.5rem;
+                    font-family: 'Lato', sans-serif;
+                    font-size: 0.85rem;
+                    color: #244C5A;
+                    border-left: 3px solid #00A94F;
+                ">
+                    🔍 {active_count} filtro{'s' if active_count > 1 else ''} activo{'s' if active_count > 1 else ''}
+                </div>
+            """, unsafe_allow_html=True)
 
     return get_filter_state()
 

@@ -48,26 +48,27 @@ COLORS = {
     "kpi_purple": "#7B1FA2",  # Purple (accent)
 }
 
-# Common layout settings
+# Common layout settings - matching FBCB institutional style
+# NOTE: title is NOT included here because apply_default_layout handles it explicitly
 DEFAULT_LAYOUT = {
-    "font": {"family": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "color": COLORS["text"]},
+    "font": {"family": "Montserrat, Lato, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "color": COLORS["text"]},
     "plot_bgcolor": COLORS["white"],
     "paper_bgcolor": COLORS["white"],
     "margin": {"l": 60, "r": 30, "t": 60, "b": 50},
     "xaxis": {"gridcolor": COLORS["grid"], "zerolinecolor": COLORS["grid"]},
     "yaxis": {"gridcolor": COLORS["grid"], "zerolinecolor": COLORS["grid"]},
-    "hoverlabel": {"bgcolor": COLORS["white"], "font_size": 12, "font_family": "Inter"},
+    "hoverlabel": {"bgcolor": COLORS["white"], "font_size": 12, "font_family": "Lato, sans-serif"},
 }
 
 
 def apply_default_layout(fig: go.Figure, title: str = "", height: int = 400,
                          show_legend: bool = True, **kwargs) -> go.Figure:
-    """Apply default layout styling to a figure."""
+    """Apply default layout styling to a figure - FBCB institutional style."""
     fig.update_layout(
-        title={"text": title, "font": {"size": 16, "color": COLORS["text"]}, "x": 0.02, "xanchor": "left"},
+        title={"text": title, "font": {"family": "Montserrat, sans-serif", "size": 16, "color": COLORS["text"]}, "x": 0.02, "xanchor": "left"},
         height=height,
         showlegend=show_legend,
-        legend={"bgcolor": "rgba(255,255,255,0.9)", "bordercolor": COLORS["grid"], "borderwidth": 1},
+        legend={"bgcolor": "rgba(255,255,255,0.9)", "bordercolor": COLORS["grid"], "borderwidth": 1, "font": {"family": "Lato, sans-serif"}},
         **{k: v for k, v in DEFAULT_LAYOUT.items()},
         **kwargs,
     )
@@ -98,7 +99,7 @@ def bar_chart_horizontal(df: pd.DataFrame, x: str, y: str, title: str = "",
                          hover_data: Optional[list] = None,
                          max_label_length: int = 25) -> go.Figure:
     """
-    Create a horizontal bar chart with truncated labels for readability.
+    Create a horizontal bar chart.
 
     Args:
         df: DataFrame with data.
@@ -110,20 +111,13 @@ def bar_chart_horizontal(df: pd.DataFrame, x: str, y: str, title: str = "",
         height: Chart height in pixels.
         text_auto: Show value labels on bars.
         hover_data: Additional columns to show on hover.
-        max_label_length: Maximum character length for y-axis labels.
+        max_label_length: Unused (kept for backward compatibility).
 
     Returns:
         Plotly Figure object.
     """
-    # Truncate long labels for display
-    display_df = df.copy()
-    original_labels = display_df[y].copy()
-    display_df[y] = display_df[y].apply(
-        lambda label: label[:max_label_length] + "..." if len(str(label)) > max_label_length else label
-    )
-
     fig = px.bar(
-        display_df,
+        df,
         x=x,
         y=y,
         orientation="h",
@@ -243,13 +237,24 @@ def histogram_steps(df: pd.DataFrame, bins: int = 20, title: str = "",
         (mode_line, "Moda", COLORS["kpi_orange"], "dashdot"),
     ]
 
-    for value, name, color, dash in line_configs:
+    # Check if mean and median are very close (< 1.5 apart) to avoid overlap
+    values_close = (
+        mean_line is not None and median_line is not None and
+        abs(mean_line - median_line) < 1.5
+    )
+
+    for i, (value, name, color, dash) in enumerate(line_configs):
         if value is not None and value > 0:
+            # Alternate annotation positions to avoid overlap
+            if values_close and i == 1:  # Median gets "bottom" when close
+                pos = "bottom"
+            else:
+                pos = "top"
             fig.add_vline(
                 x=value,
                 line={"color": color, "width": 2, "dash": dash},
                 annotation_text=f"{name}: {value:.1f}",
-                annotation_position="top",
+                annotation_position=pos,
                 annotation={"font": {"color": color, "size": 11}},
             )
 
@@ -496,6 +501,9 @@ def circuit_frequency_table(circuits_df: pd.DataFrame, title: str = "",
     """
     display_df = circuits_df.copy()
 
+    # Sort by frequency descending (most frequent first)
+    display_df = display_df.sort_values("frecuencia", ascending=False).reset_index(drop=True)
+
     # Format circuit for display
     def format_circuit(circuito_json: str) -> str:
         try:
@@ -566,10 +574,11 @@ def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
         Plotly Figure object.
     """
     top_df = df.head(top_n).copy()
-    # Truncate dependency names for readability
-    top_df["label"] = top_df["dependencia"].apply(
-        lambda dep: dep[:max_label_length] + "..." if len(dep) > max_label_length else dep
-    ) + " (" + top_df["pct_expedientes"].astype(str) + "%)"
+    # Full dependency name with percentage
+    top_df["label"] = top_df["dependencia"] + " (" + top_df["pct_expedientes"].astype(str) + "%)"
+
+    # Sort descending so largest bar appears at top
+    top_df = top_df.sort_values("total_expedientes", ascending=False).reset_index(drop=True)
 
     return bar_chart_horizontal(
         top_df,
@@ -578,7 +587,6 @@ def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
         title=title,
         height=height,
         hover_data=["pct_expedientes", "total_movimientos"],
-        max_label_length=max_label_length + 10,  # Account for percentage suffix
     )
 
 

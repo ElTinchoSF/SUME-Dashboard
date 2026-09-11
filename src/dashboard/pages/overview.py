@@ -79,7 +79,6 @@ def render_overview_page(filters: FilterState) -> None:
             title="",
             height=500,
             hover_data=["porcentaje"],
-            max_label_length=22,
         )
         st.plotly_chart(fig, width="stretch")
     else:
@@ -111,7 +110,6 @@ def render_overview_page(filters: FilterState) -> None:
             title="",
             top_n=10,
             height=500,
-            max_label_length=22,
         )
         st.plotly_chart(fig, width="stretch")
     else:

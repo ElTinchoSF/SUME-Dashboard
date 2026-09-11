@@ -20,6 +20,26 @@ from src.config import get_settings
 from src.database.connection import get_connection
 
 
+def _get_data_year_range() -> tuple[Optional[int], Optional[int]]:
+    """
+    Get the min and max years from the database.
+
+    Returns:
+        Tuple of (min_year, max_year) or (None, None) if no data.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.execute(
+            "SELECT MIN(substr(fecha_alta, 1, 4)), MAX(substr(fecha_alta, 1, 4)) FROM expedientes WHERE fecha_alta IS NOT NULL"
+        )
+        row = cursor.fetchone()
+        if row and row[0] and row[1]:
+            return int(row[0]), int(row[1])
+    except Exception:
+        pass
+    return None, None
+
+
 @dataclass(frozen=True)
 class FilterState:
     """Global filter state for dashboard queries."""
