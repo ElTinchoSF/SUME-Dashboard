@@ -47,6 +47,7 @@ class FilterState:
     date_range: tuple[Optional[str], Optional[str]] = (None, None)
     conceptos: tuple[str, ...] = ()
     dependencias: tuple[str, ...] = ()
+    asuntos: tuple[str, ...] = ()
 
     def to_sql_where(self) -> tuple[str, list]:
         """
@@ -83,6 +84,19 @@ class FilterState:
                 )
             """)
             params.extend(self.dependencias)
+
+        # Asunto filter - expedientes matching selected asuntos
+        if self.asuntos:
+            placeholders = ",".join("?" * len(self.asuntos))
+            clauses.append(f"""
+                e.id IN (
+                    SELECT DISTINCT ea.expediente_id
+                    FROM expediente_asuntos ea
+                    JOIN asuntos a ON ea.asunto_id = a.id
+                    WHERE a.asunto IN ({placeholders})
+                )
+            """)
+            params.extend(self.asuntos)
 
         if not clauses:
             return "", []
@@ -223,6 +237,19 @@ def _compute_circuitos_with_filters(
         """)
         params.extend(filters.dependencias)
 
+    # Asunto filter
+    if filters.asuntos:
+        placeholders = ",".join("?" * len(filters.asuntos))
+        where_clauses.append(f"""
+            e.id IN (
+                SELECT DISTINCT ea.expediente_id
+                FROM expediente_asuntos ea
+                JOIN asuntos a ON ea.asunto_id = a.id
+                WHERE a.asunto IN ({placeholders})
+            )
+        """)
+        params.extend(filters.asuntos)
+
     # Additional concepto filter from function parameter
     if concepto is not None:
         where_clauses.append("e.concepto = ?")
@@ -333,7 +360,7 @@ def load_step_stats(concepto: Optional[str] = None, filters: Optional[FilterStat
         median_steps, mode_steps, std_steps, total_circuitos, total_expedientes
     """
     # If filters are applied, use filtered circuits
-    if filters and (filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias):
+    if filters and (filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias or filters.asuntos):
         circuitos_df = load_circuitos(concepto, filters)
         if circuitos_df.empty:
             return pd.DataFrame(columns=[
@@ -466,6 +493,19 @@ def load_permanence(concepto: Optional[str] = None, filters: Optional[FilterStat
         """)
         params.extend(filters.dependencias)
 
+    # Asunto filter
+    if filters and filters.asuntos:
+        placeholders = ",".join("?" * len(filters.asuntos))
+        where_clauses.append(f"""
+            e.id IN (
+                SELECT DISTINCT ea.expediente_id
+                FROM expediente_asuntos ea
+                JOIN asuntos a ON ea.asunto_id = a.id
+                WHERE a.asunto IN ({placeholders})
+            )
+        """)
+        params.extend(filters.asuntos)
+
     # Additional concepto filter from function parameter
     if concepto is not None:
         where_clauses.append("e.concepto = ?")
@@ -555,6 +595,64 @@ def load_conceptos() -> pd.DataFrame:
     db = get_connection()
     query = "SELECT concepto, COUNT(*) as cantidad FROM expedientes GROUP BY concepto ORDER BY cantidad DESC"
     return pd.read_sql_query(query, db)
+
+
+@st.cache_data(ttl=300, show_spinner="Cargando asuntos...")
+def load_asuntos(concepto: Optional[str] = None) -> pd.DataFrame:
+    """
+    Load asuntos for a given concepto (or all if None).
+
+    Args:
+        concepto: Filter by concepto name. If None, returns all asuntos.
+
+    Returns:
+        DataFrame with columns: concepto, asunto, total_expedientes
+    """
+    db = get_connection()
+
+    if concepto:
+        query = """
+            SELECT a.concepto, a.asunto, COUNT(ea.expediente_id) as total_expedientes
+            FROM asuntos a
+            LEFT JOIN expediente_asuntos ea ON a.id = ea.asunto_id
+            WHERE a.concepto = ?
+            GROUP BY a.concepto, a.asunto
+            ORDER BY total_expedientes DESC
+        """
+        params = [concepto]
+    else:
+        query = """
+            SELECT a.concepto, a.asunto, COUNT(ea.expediente_id) as total_expedientes
+            FROM asuntos a
+            LEFT JOIN expediente_asuntos ea ON a.id = ea.asunto_id
+            GROUP BY a.concepto, a.asunto
+            ORDER BY a.concepto, total_expedientes DESC
+        """
+        params = []
+
+    return pd.read_sql_query(query, db, params=params)
+
+
+def ensure_asuntos_populated() -> bool:
+    """
+    Ensure asuntos table is populated. Returns True if data exists.
+
+    This function checks if asuntos are populated and triggers
+    extraction if the table is empty (first run or after DB reset).
+    """
+    db = get_connection()
+
+    # Check if asuntos table has data
+    cursor = db.execute("SELECT COUNT(*) FROM asuntos")
+    count = cursor.fetchone()[0]
+
+    if count == 0:
+        # Table is empty, populate from patterns
+        from src.analysis.asuntos import populate_asuntos_table
+        populate_asuntos_table()
+        return True
+
+    return True
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando tráfico de dependencias...")

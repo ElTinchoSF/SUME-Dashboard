@@ -29,14 +29,14 @@ def main() -> None:
         page_title="SUME Dashboard",
         page_icon="📊",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="locked"
     )
 
     # Load logo once for reuse
     logo_path = Path("Docs/Logo FBCB-UNL.png")
     logo_b64 = base64.b64encode(logo_path.read_bytes()).decode() if logo_path.exists() else ""
 
-    # Custom CSS for FBCB institutional styling - using st.html for minimal spacing
+    # Custom CSS for FBCB institutional styling
     st.html("""
         <style>
         /* Google Fonts */
@@ -49,17 +49,14 @@ def main() -> None:
             background-color: rgba(255, 255, 255, 0.0) !important;
             visibility: visible !important;
             height: 2rem !important;
+            z-index: 1 !important;
         }
         [data-testid="stToolbar"] { 
             background: transparent !important; 
             height: 2rem !important; 
+            z-index: 1 !important;
         }
         [data-testid="stDecoration"] { display: none !important; }
-        
-        /* Reduce sidebar header to just space for toggle icon */
-        [data-testid="stSidebarHeader"] { 
-            height: 2rem !important; 
-        }
 
         /* ══════════════════════════════════════════════
            LAYOUT: Minimal padding - maximum content space

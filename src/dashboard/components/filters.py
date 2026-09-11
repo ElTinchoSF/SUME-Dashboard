@@ -6,10 +6,11 @@ across page navigation.
 """
 
 import streamlit as st
+import pandas as pd
 from datetime import date, timedelta
 from typing import Optional
 
-from src.dashboard.data import FilterState, load_conceptos, load_dependencias
+from src.dashboard.data import FilterState, load_conceptos, load_dependencias, load_asuntos, ensure_asuntos_populated
 
 
 # Session state keys
@@ -17,6 +18,7 @@ FILTER_KEY = "dashboard_filters"
 DATE_RANGE_KEY = "date_range"
 CONCEPTOS_KEY = "selected_conceptos"
 DEPENDENCIAS_KEY = "selected_dependencias"
+ASUNTOS_KEY = "selected_asuntos"
 
 
 def _get_default_year() -> int:
@@ -42,10 +44,12 @@ def init_filter_state() -> None:
             date_range=(start_of_year.isoformat(), end_of_year.isoformat()),
             conceptos=(),
             dependencias=(),
+            asuntos=(),
         )
         st.session_state[DATE_RANGE_KEY] = (start_of_year, end_of_year)
         st.session_state[CONCEPTOS_KEY] = []
         st.session_state[DEPENDENCIAS_KEY] = []
+        st.session_state[ASUNTOS_KEY] = []
 
 
 def get_filter_state() -> FilterState:
@@ -70,10 +74,12 @@ def reset_filters() -> None:
         date_range=(start_of_year.isoformat(), end_of_year.isoformat()),
         conceptos=(),
         dependencias=(),
+        asuntos=(),
     )
     st.session_state[DATE_RANGE_KEY] = (start_of_year, end_of_year)
     st.session_state[CONCEPTOS_KEY] = []
     st.session_state[DEPENDENCIAS_KEY] = []
+    st.session_state[ASUNTOS_KEY] = []
 
 
 def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
@@ -229,6 +235,76 @@ def render_dependencia_filter() -> list[str]:
     return selected
 
 
+def render_asunto_filter() -> list[str]:
+    """
+    Render asunto multiselect filtered by selected conceptos.
+
+    Returns:
+        List of selected asunto strings.
+    """
+    init_filter_state()
+
+    # Ensure asuntos are populated
+    ensure_asuntos_populated()
+
+    # Get selected conceptos to filter available asuntos
+    filters = get_filter_state()
+    selected_conceptos = filters.conceptos if filters.conceptos else None
+
+    # Load available asuntos (filtered by concepto if selected)
+    if selected_conceptos and len(selected_conceptos) == 1:
+        # Single concepto selected - show only its asuntos
+        asuntos_df = load_asuntos(concepto=selected_conceptos[0])
+    elif selected_conceptos:
+        # Multiple conceptos - show asuntos for all selected
+        all_asuntos = []
+        for concepto in selected_conceptos:
+            df = load_asuntos(concepto=concepto)
+            all_asuntos.append(df)
+        if all_asuntos:
+            asuntos_df = pd.concat(all_asuntos, ignore_index=True)
+        else:
+            asuntos_df = pd.DataFrame(columns=["concepto", "asunto", "total_expedientes"])
+    else:
+        # No concepto selected - show all asuntos
+        asuntos_df = load_asuntos()
+
+    all_asuntos = asuntos_df["asunto"].unique().tolist() if not asuntos_df.empty else []
+
+    current = st.session_state.get(ASUNTOS_KEY, [])
+
+    # Ensure current selection is valid
+    current = [a for a in current if a in all_asuntos]
+
+    # Disable asunto filter if no concepto selected
+    disabled = not selected_conceptos
+    placeholder = "Primero seleccione un concepto..." if disabled else "Seleccionar asuntos..."
+
+    selected = st.multiselect(
+        "Asuntos",
+        options=all_asuntos,
+        default=current,
+        key="filter_asuntos",
+        help="Filtrar por asunto/tipo de trámite (disponible solo con un concepto seleccionado)",
+        placeholder=placeholder,
+        disabled=disabled,
+    )
+
+    # Update session state if changed
+    if selected != current:
+        st.session_state[ASUNTOS_KEY] = selected
+        filters = get_filter_state()
+        new_filters = FilterState(
+            date_range=filters.date_range,
+            conceptos=filters.conceptos,
+            dependencias=filters.dependencias,
+            asuntos=tuple(selected),
+        )
+        set_filter_state(new_filters)
+
+    return selected
+
+
 def render_global_filters_sidebar() -> FilterState:
     """
     Render all global filters in the sidebar.
@@ -306,6 +382,22 @@ def render_global_filters_sidebar() -> FilterState:
 
         st.divider()
 
+        # Asunto filter - only shows when a concepto is selected
+        st.markdown("""
+            <div style="
+                color: #00A94F;
+                font-family: 'Montserrat', sans-serif;
+                font-weight: 500;
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 0.5rem;
+            ">📋 Asuntos</div>
+        """, unsafe_allow_html=True)
+        render_asunto_filter()
+
+        st.divider()
+
         # Reset button - institutional green
         if st.button("🔄 Restablecer filtros", width="stretch",
                      help="Volver a valores por defecto (todo el año, todos los conceptos/dependencias)"):
@@ -320,6 +412,8 @@ def render_global_filters_sidebar() -> FilterState:
         if filters.conceptos:
             active_count += 1
         if filters.dependencias:
+            active_count += 1
+        if filters.asuntos:
             active_count += 1
 
         if active_count > 0:
@@ -366,6 +460,12 @@ def render_filter_summary(filters: FilterState) -> None:
             parts.append(f"🏢 {', '.join(filters.dependencias)}")
         else:
             parts.append(f"🏢 {len(filters.dependencias)} dependencias")
+
+    if filters.asuntos:
+        if len(filters.asuntos) <= 3:
+            parts.append(f"📝 {', '.join(filters.asuntos)}")
+        else:
+            parts.append(f"📝 {len(filters.asuntos)} asuntos")
 
     if parts:
         st.caption(" | ".join(parts))

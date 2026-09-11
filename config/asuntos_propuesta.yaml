@@ -1,0 +1,310 @@
+# Propuesta de Asuntos por Concepto
+#
+# Análisis automático de descripciones de expedientes FBCB-UNL (2025)
+# Cada asunto se extrae de las descripciones más frecuentes de cada concepto.
+#
+# CAMBIOS NECESARIOS:
+# - Verificar y unificar asuntos similares
+# - Agregar asuntos faltantes
+# - Eliminar asuntos que no apliquen
+# - Ajustar nombres para consistencia
+
+# ============================================================
+# Conceptos con patrones claros (alta concentración)
+# ============================================================
+
+"Gestion de Pago a Proveedores":
+  asuntos:
+    - "Liquidación y pago a proveedores"
+    - "Pago al exterior"
+    - "Transferencia de fondos"
+    - "Devolución de cobros"
+    - "Otros pagos"
+
+"Gestión de Viaticos":
+  asuntos:
+    - "Solicitud de viáticos"
+    - "Viáticos a favor de [nombre]"
+    - "Rendición de viáticos"
+    - "Solicitud de viáticos para evento"
+
+"Gestión de Cargos Docentes":
+  asuntos:
+    - "Solicitud de cargo Jefe de Trabajos Prácticos"
+    - "Solicitud de cargo Ayudante de 1ra"
+    - "Solicitud de cargo Ayudante de Cátedra"
+    - "Solicitud de cargo Profesor Adjunto"
+    - "Solicitud de cargo Profesor Asociado"
+    - "Solicitud de cargo Profesor Titular"
+    - "Solicitud de cargo Horas de Cátedra"
+    - "Designación de cargo"
+    - "Renuncia a cargo"
+
+"Gestión de Diplomas":
+  asuntos:
+    - "Solicitud de diploma Licenciatura"
+    - "Solicitud de diploma Doctorado"
+    - "Solicitud de diploma Tecnicatura"
+    - "Envío de diploma"
+    - "Entrega de diploma"
+
+"Gestión de fondos SPU":
+  asuntos:
+    - "Liquidación y pago a proveedores"
+    - "Rendición de fondos SPU"
+
+# ============================================================
+# Conceptos con patrones medios
+# ============================================================
+
+"Gestión de Fondos con cargo a rendición":
+  asuntos:
+    - "Solicitud de adelanto a responsable"
+    - "Solicitud de caja chica"
+    - "Rendición de cuentas"
+    - "Comprobantes de gastos"
+    - "Conciliación bancaria"
+    - "Libro banco"
+
+"Gestión de Bienes Patrimoniales":
+  asuntos:
+    - "Alta de bienes"
+    - "Baja de bienes"
+    - "Incorporación al patrimonio"
+    - "Transferencia de bienes"
+    - "Inventario de bienes"
+
+"Gestión de Compras y Contrataciones":
+  asuntos:
+    - "Compra directa"
+    - "Compra directa simplificada"
+    - "Licitación pública"
+    - "Adquisición de equipamiento"
+    - "Adquisición de insumos"
+    - "Mantenimiento de equipos"
+
+"Gestión de Becas":
+  asuntos:
+    - "Solicitud de beca"
+    - "Prórroga de beca"
+    - "Suspensión de beca"
+    - "Renuncia a beca"
+    - "Beca de comisión de servicios"
+    - "Beca de integración académica"
+    - "Cientibeca"
+
+"Gestión de Particulares":
+  asuntos:
+    - "Certificación de servicios"
+    - "Certificación de servicios y remuneraciones"
+    - "Solicitud de subsidio"
+    - "Renuncia al cargo"
+    - "Plan de estudios"
+    - "Solicitud de licencia"
+
+"Gestión Personal Docente":
+  asuntos:
+    - "Licencia por maternidad"
+    - "Licencia por enfermedad"
+    - "Licencia con goce de haberes"
+    - "Licencia sin goce de sueldo"
+    - "Certificación de servicios"
+    - "Designación de jurado"
+    - " Nómina de jurados"
+    - "Planificación"
+    - "Horas extras"
+
+"Gestión Personal No Docente":
+  asuntos:
+    - "Licencia por enfermedad"
+    - "Inasistencia injustificada"
+    - "Permiso de lactancia"
+    - "Renuncia al cargo"
+    - "Designación de jurado"
+    - "Situación de revista"
+    - "Horas extras"
+
+"Actas de exámenes y de regularización":
+  asuntos:
+    - "Acta de examen"
+    - "Acta de promoción"
+    - "Nómina de alumnos"
+    - "Rectificación de acta"
+    - "Acta de alumnos externos"
+
+# ============================================================
+# Conceptos con baja concentración (muchos asuntos únicos)
+# ============================================================
+
+"Gestión Alumno":
+  asuntos:
+    # Certificados (diferenciados)
+    - "Certificado Analítico"
+    - "Historia Académica"
+    - "Materias Aprobadas"
+    - "Finalización de Carrera y Título en Trámite"
+    - "Sanciones Disciplinarias"
+    - "Otros Certificados"
+    # Trámites académicos
+    - "Extensión de regularidad"
+    - "Plan de estudios"
+    - "Inscripción a materia"
+    - "Inscripción a tesina"
+    - "Solicitud de equivalencia"
+    - "Solicitud de regularización"
+    - "Constancia de alumno regular"
+    - "Otros trámites de alumno"
+
+"Gestión de Convenios y Acuerdos":
+  asuntos:
+    - "Certificado de cumplimiento fiscal"
+    - "Certificado de deudores morosos"
+    - "Rectificativa SAT"
+    - "Transferencia de fondos"
+    - "Convenio marco"
+    - "Convenio con sanatorios"
+    - "Oficio judicial"
+    - "Otros convenios"
+
+"Gestión de Ingresos de Fondos":
+  asuntos:
+    - "Elevación de orden de trabajo"
+    - "Aprobación de movimientos bancarios"
+    - "Solicitud de documentación"
+    - "Transferencia de fondos"
+    - "Otras órdenes de trabajo"
+
+"Proyecto y Propuestas curriculares, extensión e investigación":
+  asuntos:
+    - "Formación extracurricular"
+    - "Propuesta curricular"
+    - "Proyecto de investigación"
+    - "Proyecto de extensión"
+    - "Convocatoria de subsidios"
+    - "Reapertura de plataforma"
+    - "Curso de extensión"
+    - "Curso de posgrado"
+    - "Otras propuestas"
+
+"Gestión de Órganos de Gobierno y Autoridades":
+  asuntos:
+    - "Designación de autoridades"
+    - "Prórroga de beca"
+    - "Renovación de comité"
+    - "Habilitación de laboratorio"
+    - "Resolución de CD"
+    - "Sesión ordinaria"
+    - "Otras gestiones de gobierno"
+
+"Gestión Obra Pública":
+  asuntos:
+    - "Reparación de ascensores"
+    - "Ampliación de laboratorio"
+    - "Mantenimiento edilicio"
+    - "Puesta en valor"
+
+"Normativa Institucional y externa":
+  asuntos:
+    - "Resolución"
+    - "Reglamento"
+    - "Plan de estudios"
+    - "Memoria anual"
+    - "Normativa"
+
+"Adhesiones, Homenajes, Declaraciones y Acontecimientos":
+  asuntos:
+    - "Aval institucional"
+    - "Justificación de inasistencia"
+    - "Adhesión a evento"
+    - "Homenaje"
+    - "Declaración"
+    - "Acontecimiento"
+
+"Reservas para uso de espacios Institucionales":
+  asuntos:
+    - "Solicitud de aula"
+    - "Solicitud de Aula Magna"
+    - "Uso de instalaciones"
+    - "Reserva de espacio"
+
+"Elecciones":
+  asuntos:
+    - "Junta electoral"
+    - "Cronograma electoral"
+    - "Integración de junta"
+    - "Resultado electoral"
+    - "Designación de autoridades CBL"
+
+"SAT - SET":
+  asuntos:
+    - "Solicitud de formulario 931"
+    - "Solicitud de documentación"
+    - "Transferencia de fondos"
+    - "Rendición de fondos"
+    - "Adenda a convenio"
+    - "Desarchivo de expediente"
+
+# ============================================================
+# Conceptos con muy pocos expedientes
+# ============================================================
+
+"Denuncia y Sumario":
+  asuntos:
+    - "Falta de ética"
+    - "Actuaciones judiciales"
+    - "Informe de infraestructura"
+
+"Elecciones":
+  asuntos:
+    - "Junta electoral"
+    - "Cronograma electoral"
+    - "Integración de junta"
+    - "Resultado electoral"
+
+"Migración":
+  asuntos:
+    - "Migración de datos"
+    - "Transferencia de expediente"
+    - "Otros trámites de migración"
+
+"Notificaciones Judiciales":
+  asuntos:
+    - "Oficio judicial"
+    - "Solicitud de información"
+    - "Contrato de locación"
+
+"Pasantias y Adscripciones":
+  asuntos:
+    - "Propuesta de formación extracurricular"
+    - "Oferta de vacante"
+
+"Presupuesto":
+  asuntos:
+    - "Libro banco"
+    - "Conciliación bancaria"
+    - "Informe presupuestario"
+
+"Gestión de reintegros":
+  asuntos:
+    - "Rendición de gastos"
+    - "Reintegro de facturas"
+    - "Devolución de fondos"
+
+# ============================================================
+# Metadata
+# ============================================================
+
+metadata:
+  version: "1.0"
+  description: "Propuesta de asuntos extraídos de descripciones de expedientes FBCB-UNL"
+  date: "2026-09-10"
+  total_expedientes: 28000
+  total_conceptos: 28
+  notes: |
+    - Los conceptos con alta concentración (ej: Gestion de Pago a Proveedores)
+      tienen asuntos más definidos y precisos.
+    - Los conceptos con baja concentración (ej: Gestión Alumno) tienen
+      asuntos más generales que pueden necesitar subdivisión.
+    - Los asuntos con [nombre] indican que se debe extraer el nombre
+      del expediente específico.
+    - Revisar y unificar asuntos similares antes de implementar.

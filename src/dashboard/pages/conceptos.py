@@ -16,6 +16,8 @@ from src.dashboard.data import (
     load_step_stats,
     load_permanence,
     load_conceptos,
+    load_asuntos,
+    ensure_asuntos_populated,
     FilterState,
 )
 from src.dashboard.components.charts import (
@@ -54,13 +56,51 @@ def render_conceptos_page(filters: FilterState) -> None:
         st.info("Seleccione un concepto para continuar.")
         return
 
+    # Asunto selector (cascada: solo muestra asuntos del concepto seleccionado)
+    ensure_asuntos_populated()
+    asuntos_df = load_asuntos(concepto=selected_concepto)
+    all_asuntos = asuntos_df["asunto"].tolist() if not asuntos_df.empty else []
+
+    # Get current asunto from filters if it matches this concepto
+    current_asunto = None
+    if filters.asuntos and len(filters.asuntos) == 1:
+        # Check if the filtered asunto belongs to this concepto
+        if filters.asuntos[0] in all_asuntos:
+            current_asunto = filters.asuntos[0]
+
+    selected_asunto = st.selectbox(
+        "Seleccionar asunto",
+        options=["Todos los asuntos"] + all_asuntos,
+        index=0 if current_asunto is None else all_asuntos.index(current_asunto) + 1,
+        key="conceptos_asunto_selector",
+        help="Filtrar por tipo de trámite específico (opcional)",
+    )
+
+    # Apply asunto filter if selected
+    if selected_asunto and selected_asunto != "Todos los asuntos":
+        # Create new filters with asunto
+        page_filters = FilterState(
+            date_range=filters.date_range,
+            conceptos=filters.conceptos,
+            dependencias=filters.dependencias,
+            asuntos=(selected_asunto,),
+        )
+    else:
+        # Use original filters (no asunto filter)
+        page_filters = FilterState(
+            date_range=filters.date_range,
+            conceptos=filters.conceptos,
+            dependencias=filters.dependencias,
+            asuntos=(),
+        )
+
     st.divider()
 
-    # Load data for selected concepto
+    # Load data for selected concepto with filters
     with st.spinner(f"Cargando datos para '{selected_concepto}'..."):
-        circuitos_df = load_circuitos(selected_concepto, filters)
-        step_stats_df = load_step_stats(selected_concepto, filters)
-        permanence_df = load_permanence(selected_concepto, filters)
+        circuitos_df = load_circuitos(selected_concepto, page_filters)
+        step_stats_df = load_step_stats(selected_concepto, page_filters)
+        permanence_df = load_permanence(selected_concepto, page_filters)
 
     if circuitos_df.empty:
         st.warning(f"No hay circuitos registrados para el concepto '{selected_concepto}'.")

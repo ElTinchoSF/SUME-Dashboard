@@ -14,6 +14,8 @@ import pandas as pd
 from src.dashboard.data import (
     load_circuitos,
     load_conceptos,
+    load_asuntos,
+    ensure_asuntos_populated,
     FilterState,
 )
 from src.dashboard.components.charts import (
@@ -38,16 +40,36 @@ def render_circuitos_page(filters: FilterState) -> None:
         st.warning("No hay conceptos disponibles en la base de datos.")
         return
 
-    # Concepto selector
-    col_select, col_toggle = st.columns([3, 1])
+    # Concepto selector and Asunto selector
+    col_concepto, col_asunto, col_toggle = st.columns([2, 2, 1])
 
-    with col_select:
+    with col_concepto:
         selected_concepto = st.selectbox(
             "Seleccionar concepto",
             options=all_conceptos,
             index=0,
             key="circuitos_concepto_selector",
             help="Elegir un concepto para visualizar sus circuitos",
+        )
+
+    with col_asunto:
+        # Asunto selector (cascada: solo muestra asuntos del concepto seleccionado)
+        ensure_asuntos_populated()
+        asuntos_df = load_asuntos(concepto=selected_concepto)
+        all_asuntos = asuntos_df["asunto"].tolist() if not asuntos_df.empty else []
+
+        # Get current asunto from filters if it matches this concepto
+        current_asunto = None
+        if filters.asuntos and len(filters.asuntos) == 1:
+            if filters.asuntos[0] in all_asuntos:
+                current_asunto = filters.asuntos[0]
+
+        selected_asunto = st.selectbox(
+            "Seleccionar asunto",
+            options=["Todos los asuntos"] + all_asuntos,
+            index=0 if current_asunto is None else all_asuntos.index(current_asunto) + 1,
+            key="circuitos_asunto_selector",
+            help="Filtrar por tipo de trámite específico (opcional)",
         )
 
     with col_toggle:
@@ -64,11 +86,27 @@ def render_circuitos_page(filters: FilterState) -> None:
         st.info("Seleccione un concepto para continuar.")
         return
 
+    # Apply asunto filter if selected
+    if selected_asunto and selected_asunto != "Todos los asuntos":
+        page_filters = FilterState(
+            date_range=filters.date_range,
+            conceptos=filters.conceptos,
+            dependencias=filters.dependencias,
+            asuntos=(selected_asunto,),
+        )
+    else:
+        page_filters = FilterState(
+            date_range=filters.date_range,
+            conceptos=filters.conceptos,
+            dependencias=filters.dependencias,
+            asuntos=(),
+        )
+
     st.divider()
 
-    # Load circuitos for selected concepto
+    # Load circuitos for selected concepto with filters
     with st.spinner(f"Cargando circuitos para '{selected_concepto}'..."):
-        circuitos_df = load_circuitos(selected_concepto)
+        circuitos_df = load_circuitos(selected_concepto, page_filters)
 
     if circuitos_df.empty:
         st.warning(f"No hay circuitos registrados para el concepto '{selected_concepto}'.")

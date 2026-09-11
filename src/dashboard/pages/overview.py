@@ -7,6 +7,7 @@ monthly trend line chart, and top 10 dependencias by traffic.
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 from src.dashboard.data import (
     load_expedientes,
@@ -47,25 +48,40 @@ def render_overview_page(filters: FilterState) -> None:
     # --- KPI Cards ---
     st.subheader("Indicadores Clave")
 
-    total_expedientes = len(expedientes_df)
-    total_movimientos = int(expedientes_df.get("total_movimientos", pd.Series([0])).sum()) if "total_movimientos" in expedientes_df.columns else 0
-    # We need to compute total movements from filtered data
+    total_iniciados = len(expedientes_df)
     total_movimientos = _get_total_movimientos(filters)
+    tiempo_medio = _get_tiempo_medio_ciclo(filters)
+    etapas_promedio = _get_etapas_promedio(filters)
+    archivados = _get_archivados_count(filters)
+    tasa_finalizacion = (archivados / total_iniciados * 100) if total_iniciados > 0 else 0
+    top1 = _get_top_asunto(filters, n=1)
+    top2 = _get_top_asunto(filters, n=2)
 
-    unique_conceptos = expedientes_df["concepto"].nunique()
-    unique_dependencias = _get_unique_dependencias(filters)
-
-    kpis = [
-        {"label": "Total Expedientes", "value": f"{total_expedientes:,}",
-         "help": "Número total de expedientes en el rango filtrado"},
+    # Row 1: Primary KPIs
+    kpis_row1 = [
+        {"label": "Expedientes Iniciados", "value": f"{total_iniciados:,}",
+         "help": "Total de expedientes creados en el período"},
         {"label": "Total Movimientos", "value": f"{total_movimientos:,}",
          "help": "Total de pasos/movimientos registrados"},
-        {"label": "Conceptos Únicos", "value": f"{unique_conceptos}",
-         "help": "Cantidad de tipos de trámite distintos"},
-        {"label": "Dependencias Únicas", "value": f"{unique_dependencias}",
-         "help": "Cantidad de dependencias distintas involucradas"},
+        {"label": "Tiempo Medio de Ciclo", "value": f"{tiempo_medio:.1f} días",
+         "help": "Promedio de días hábiles entre alta y última gestión"},
+        {"label": "Etapas Promedio", "value": f"{etapas_promedio:.1f}",
+         "help": "Promedio de pasos por expediente (promedio de promedios por concepto)"},
     ]
-    render_kpi_row(kpis)
+    render_kpi_row(kpis_row1)
+
+    # Row 2: Archiving & Asunto KPIs
+    kpis_row2 = [
+        {"label": "Archivados", "value": f"{archivados:,}",
+         "help": "Expedientes cuya última dependencia es Archivo Digital"},
+        {"label": "Tasa de Finalización", "value": f"{tasa_finalizacion:.1f}%",
+         "help": "Porcentaje de expedientes archivados sobre los iniciados"},
+        {"label": "Asunto más Frecuente", "value": top1["label"],
+         "help": f"{top1['count']:,} expedientes ({top1['pct']:.1f}%)"},
+        {"label": "2° Asunto más Frecuente", "value": top2["label"],
+         "help": f"{top2['count']:,} expedientes ({top2['pct']:.1f}%)"},
+    ]
+    render_kpi_row(kpis_row2)
 
     st.divider()
 
@@ -166,20 +182,157 @@ def _get_total_movimientos(filters: FilterState) -> int:
     return result[0] if result else 0
 
 
-def _get_unique_dependencias(filters: FilterState) -> int:
-    """Get unique dependencias count for filtered expedientes."""
+def _get_archivados_count(filters: FilterState) -> int:
+    """
+    Count expedientes whose last movement is to 'Archivo Digital'.
+
+    An expediente is considered archived only if its final destination
+    (last movement by orden) is Archivo Digital.
+    """
     from src.database.connection import get_connection
 
     db = get_connection()
     where_clause, params = filters.to_sql_where()
 
     query = f"""
-        SELECT COUNT(DISTINCT m.dependencia) as total
-        FROM movimientos m
-        JOIN expedientes e ON m.expediente_id = e.id
-        {where_clause}
+        SELECT COUNT(*) FROM (
+            SELECT e.id
+            FROM expedientes e
+            JOIN movimientos m ON e.id = m.expediente_id
+            JOIN (
+                SELECT expediente_id, MAX(orden) as max_orden
+                FROM movimientos
+                GROUP BY expediente_id
+            ) lm ON m.expediente_id = lm.expediente_id AND m.orden = lm.max_orden
+            WHERE m.dependencia LIKE '%Archivo Digital%'
+            {where_clause.replace('WHERE', 'AND', 1) if where_clause else ''}
+        )
     """
 
     cursor = db.execute(query, params)
     result = cursor.fetchone()
     return result[0] if result else 0
+
+
+def _get_tiempo_medio_ciclo(filters: FilterState) -> float:
+    """
+    Average business days (weekdays) between fecha_alta and last movement.
+
+    Calculates the lifecycle time for each expediente as the number of
+    weekdays between its creation date (fecha_alta) and its last movement date.
+    """
+    from src.database.connection import get_connection
+
+    db = get_connection()
+    where_clause, params = filters.to_sql_where()
+
+    query = f"""
+        SELECT e.fecha_alta, MAX(m.fecha_recepcion) as fecha_ultima
+        FROM expedientes e
+        JOIN movimientos m ON e.id = m.expediente_id
+        WHERE e.fecha_alta IS NOT NULL AND m.fecha_recepcion IS NOT NULL
+        {('AND ' + where_clause.replace('WHERE ', '', 1)) if where_clause else ''}
+        GROUP BY e.id
+    """
+
+    cursor = db.execute(query, params)
+    rows = cursor.fetchall()
+
+    if not rows:
+        return 0.0
+
+    business_days_list = []
+    for fecha_alta, fecha_ultima in rows:
+        try:
+            start = pd.Timestamp(fecha_alta)
+            end = pd.Timestamp(fecha_ultima)
+            if end >= start:
+                bd = int(np.busday_count(start.date(), end.date()))
+                business_days_list.append(bd)
+            elif end < start:
+                # Some data inconsistency: last movement before creation
+                business_days_list.append(0)
+        except Exception:
+            continue
+
+    return float(np.mean(business_days_list)) if business_days_list else 0.0
+
+
+def _get_etapas_promedio(filters: FilterState) -> float:
+    """
+    Average steps per expediente using promedio de promedios by concepto.
+
+    For each concepto: avg_steps = total_movimientos / total_expedientes.
+    Then averages those concepto-level averages across all conceptos.
+    """
+    from src.database.connection import get_connection
+
+    db = get_connection()
+    where_clause, params = filters.to_sql_where()
+
+    query = f"""
+        SELECT AVG(concepto_avg) FROM (
+            SELECT COUNT(m.id) * 1.0 / COUNT(DISTINCT e.id) as concepto_avg
+            FROM expedientes e
+            JOIN movimientos m ON e.id = m.expediente_id
+            {where_clause}
+            GROUP BY e.concepto
+            HAVING COUNT(DISTINCT e.id) > 0
+        )
+    """
+
+    cursor = db.execute(query, params)
+    result = cursor.fetchone()
+    return float(result[0]) if result and result[0] else 0.0
+
+
+def _get_top_asunto(filters: FilterState, n: int = 1) -> dict:
+    """
+    Get the N-th most frequent asunto with count and percentage.
+
+    Args:
+        filters: FilterState to apply.
+        n: 1 for most frequent, 2 for second most, etc.
+
+    Returns:
+        dict with keys: label, count, pct
+    """
+    from src.database.connection import get_connection
+
+    db = get_connection()
+    where_clause, params = filters.to_sql_where()
+
+    # Get total expedientes for percentage calculation
+    total_query = f"""
+        SELECT COUNT(*) FROM expedientes e
+        {where_clause}
+    """
+    cursor = db.execute(total_query, params)
+    total = cursor.fetchone()[0]
+
+    if total == 0:
+        return {"label": "N/A", "count": 0, "pct": 0.0}
+
+    # Get N-th most frequent asunto
+    query = f"""
+        SELECT a.asunto, COUNT(ea.expediente_id) as total
+        FROM expediente_asuntos ea
+        JOIN asuntos a ON ea.asunto_id = a.id
+        JOIN expedientes e ON ea.expediente_id = e.id
+        {where_clause}
+        GROUP BY a.asunto
+        ORDER BY total DESC
+        LIMIT 1 OFFSET ?
+    """
+
+    cursor = db.execute(query, params + [n - 1])
+    result = cursor.fetchone()
+
+    if not result:
+        return {"label": "N/A", "count": 0, "pct": 0.0}
+
+    return {
+        "label": result[0],
+        "count": result[1],
+        "pct": result[1] / total * 100,
+    }

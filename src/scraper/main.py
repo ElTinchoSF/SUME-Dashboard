@@ -220,6 +220,9 @@ class ScraperOrchestrator:
             # Generate validation report
             self._generate_validation_report()
 
+            # Update asuntos for new expedientes
+            self._update_asuntos()
+
         except Exception as e:
             logger.exception(f"Scraper run failed: {e}")
             self.stats.parse_errors += 1
@@ -473,6 +476,17 @@ class ScraperOrchestrator:
                         "INSERT INTO dependencias (nombre, nombre_original, total_expedientes) VALUES (?, ?, 1)",
                         (dep_name, dep_name),
                     )
+
+    def _update_asuntos(self) -> None:
+        """Update asuntos for newly added expedientes."""
+        try:
+            from src.analysis.asuntos import populate_asuntos_table
+            logger.info("Updating asuntos for new expedientes...")
+            counts = populate_asuntos_table()
+            total = sum(counts.values())
+            logger.info(f"Asuntos update complete: {total} asuntos extracted across {len(counts)} conceptos")
+        except Exception as e:
+            logger.warning(f"Asuntos update failed (non-critical): {e}")
 
     def _generate_validation_report(self) -> None:
         """Generate and log the validation report."""
