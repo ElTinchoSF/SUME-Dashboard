@@ -330,16 +330,21 @@ def _compute_circuitos_with_filters(
     result_df = pd.DataFrame(rows)
 
     if not result_df.empty:
-        # Identify modal circuits per concepto
-        result_df = identify_modal_circuits(result_df)
-
-        # Parse circuito JSON
+        # Parse circuito JSON FIRST (identify_modal_circuits needs circuito_json)
         result_df["circuito_parsed"] = result_df["circuito"].apply(
             lambda x: json.loads(x) if isinstance(x, str) else []
         )
         result_df["circuito_json"] = result_df["circuito"]
         result_df["step_count"] = result_df["circuito_parsed"].apply(len)
-        result_df["id"] = range(1, len(result_df) + 1)
+
+        # Identify modal circuits per concepto
+        result_df = identify_modal_circuits(result_df)
+    else:
+        result_df["circuito_parsed"] = pd.Series(dtype=object)
+        result_df["circuito_json"] = pd.Series(dtype=object)
+        result_df["step_count"] = pd.Series(dtype=int)
+
+    result_df["id"] = range(1, len(result_df) + 1)
 
     return result_df
 
@@ -629,6 +634,41 @@ def load_asuntos(concepto: Optional[str] = None) -> pd.DataFrame:
             ORDER BY a.concepto, total_expedientes DESC
         """
         params = []
+
+    return pd.read_sql_query(query, db, params=params)
+
+
+def load_asunto_distribution(concepto: str, filters: FilterState) -> pd.DataFrame:
+    """
+    Load asunto distribution for a concepto, respecting all active filters.
+
+    Unlike load_asuntos() which returns total counts from the full database,
+    this function counts only expedientes that match the current filter state
+    (date range, dependencias, etc.).
+
+    Args:
+        concepto: Concepto to filter by.
+        filters: FilterState with date_range, conceptos, dependencias, asuntos.
+
+    Returns:
+        DataFrame with columns: asunto, total_expedientes
+    """
+    db = get_connection()
+    where_clause, params = filters.to_sql_where()
+
+    # Add concepto filter
+    where_clause = f"{where_clause} AND e.concepto = ?" if where_clause else "WHERE e.concepto = ?"
+    params.append(concepto)
+
+    query = f"""
+        SELECT a.asunto, COUNT(DISTINCT ea.expediente_id) as total_expedientes
+        FROM asuntos a
+        JOIN expediente_asuntos ea ON a.id = ea.asunto_id
+        JOIN expedientes e ON ea.expediente_id = e.id
+        {where_clause}
+        GROUP BY a.asunto
+        ORDER BY total_expedientes DESC
+    """
 
     return pd.read_sql_query(query, db, params=params)
 

@@ -304,10 +304,7 @@ def main() -> None:
     with st.sidebar:
         st.markdown('<p class="sidebar-nav-title">📊 Navegación</p>', unsafe_allow_html=True)
 
-    # Render global filters in sidebar and get current filter state
-    filters = render_global_filters_sidebar()
-
-    # Page routing via radio buttons
+    # Page routing via radio buttons (between Navegación and Filtros Globales)
     page = st.sidebar.radio(
         "📄 Página",
         options=[
@@ -320,6 +317,9 @@ def main() -> None:
         key="page_selector",
         label_visibility="collapsed",
     )
+
+    # Render global filters in sidebar and get current filter state
+    filters = render_global_filters_sidebar()
 
     st.divider()
 

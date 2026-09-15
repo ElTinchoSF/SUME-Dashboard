@@ -244,7 +244,10 @@ def _render_circuit_detail_table(circuitos_df: pd.DataFrame, concepto: str) -> N
 
     db = get_connection()
 
-    for _, circuit_row in circuitos_df.iterrows():
+    # Sort by frequency descending (most frequent first)
+    circuitos_sorted = circuitos_df.sort_values("frecuencia", ascending=False)
+
+    for _, circuit_row in circuitos_sorted.iterrows():
         circuito_json = circuit_row["circuito_json"]
         frecuencia = int(circuit_row["frecuencia"])
         es_modal = bool(circuit_row["es_mas_frecuente"])

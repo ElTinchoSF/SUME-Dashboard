@@ -2,9 +2,9 @@
 Page 2: Conceptos (Análisis por Concepto).
 
 Deep-dive analysis for a selected concepto including:
-- Circuit frequency table with modal highlighting
 - Step count histogram with mean/median/mode lines
 - Permanence time boxplot by dependencia
+- Circuit frequency table with modal highlighting
 """
 
 import json
@@ -17,6 +17,7 @@ from src.dashboard.data import (
     load_permanence,
     load_conceptos,
     load_asuntos,
+    load_asunto_distribution,
     ensure_asuntos_populated,
     FilterState,
 )
@@ -24,6 +25,7 @@ from src.dashboard.components.charts import (
     histogram_steps,
     boxplot_permanence,
     circuit_frequency_table,
+    bar_chart_horizontal,
     apply_default_layout,
     COLORS,
 )
@@ -64,7 +66,6 @@ def render_conceptos_page(filters: FilterState) -> None:
     # Get current asunto from filters if it matches this concepto
     current_asunto = None
     if filters.asuntos and len(filters.asuntos) == 1:
-        # Check if the filtered asunto belongs to this concepto
         if filters.asuntos[0] in all_asuntos:
             current_asunto = filters.asuntos[0]
 
@@ -78,7 +79,6 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     # Apply asunto filter if selected
     if selected_asunto and selected_asunto != "Todos los asuntos":
-        # Create new filters with asunto
         page_filters = FilterState(
             date_range=filters.date_range,
             conceptos=filters.conceptos,
@@ -86,7 +86,6 @@ def render_conceptos_page(filters: FilterState) -> None:
             asuntos=(selected_asunto,),
         )
     else:
-        # Use original filters (no asunto filter)
         page_filters = FilterState(
             date_range=filters.date_range,
             conceptos=filters.conceptos,
@@ -106,49 +105,34 @@ def render_conceptos_page(filters: FilterState) -> None:
         st.warning(f"No hay circuitos registrados para el concepto '{selected_concepto}'.")
         return
 
-    # --- Circuit Frequency Table ---
-    st.subheader("Frecuencia de Circuitos")
+    # ================================================================
+    # 1. EXPEDIENTES POR ASUNTO
+    # ================================================================
+    st.subheader("Expedientes por Asunto")
 
-    # Format for display
-    display_df = circuitos_df.copy()
+    asuntos_dist_df = load_asunto_distribution(selected_concepto, page_filters)
+    if not asuntos_dist_df.empty:
+        total_asuntos = asuntos_dist_df["total_expedientes"].sum()
+        asuntos_dist_df = asuntos_dist_df.copy()
+        asuntos_dist_df["porcentaje"] = (asuntos_dist_df["total_expedientes"] / total_asuntos * 100).round(1)
 
-    def format_circuit(circuito_json: str) -> str:
-        try:
-            circuit = json.loads(circuito_json)
-            return " → ".join(circuit)
-        except (json.JSONDecodeError, TypeError):
-            return str(circuito_json)
-
-    display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
-    display_df["Frecuencia"] = display_df["frecuencia"]
-    display_df["% del total"] = (display_df["frecuencia"] / display_df["frecuencia"].sum() * 100).round(1)
-    display_df["Es Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅ Sí" if x else "No")
-
-    # Style the dataframe
-    def highlight_modal(row):
-        if row["Es Modal"] == "✅ Sí":
-            return ["background-color: #E8F5E9"] * len(row)
-        return [""] * len(row)
-
-    st.dataframe(
-        display_df[["Circuito", "Frecuencia", "% del total", "Es Modal"]],
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "Circuito": st.column_config.TextColumn("Circuito", width="large"),
-            "Frecuencia": st.column_config.NumberColumn("Frecuencia", format="%d"),
-            "% del total": st.column_config.NumberColumn("% del total", format="%.1f%%"),
-            "Es Modal": st.column_config.TextColumn("Es Modal", width="small"),
-        },
-    ).style.apply(highlight_modal, axis=1) if hasattr(st, 'style') else None
-
-    # Also show as interactive Plotly table
-    fig_table = circuit_frequency_table(circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35))
-    st.plotly_chart(fig_table, width="stretch")
+        fig = bar_chart_horizontal(
+            asuntos_dist_df,
+            x="total_expedientes",
+            y="asunto",
+            title="",
+            height=max(300, len(asuntos_dist_df) * 40),
+            hover_data=["porcentaje"],
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("No hay datos de asuntos para este concepto.")
 
     st.divider()
 
-    # --- Step Count Histogram (full-width) ---
+    # ================================================================
+    # 2. DISTRIBUCIÓN DE CANTIDAD DE PASOS
+    # ================================================================
     st.subheader("Distribución de Cantidad de Pasos")
 
     if not step_stats_df.empty:
@@ -168,7 +152,6 @@ def render_conceptos_page(filters: FilterState) -> None:
         )
         st.plotly_chart(fig, width="stretch")
 
-        # Show statistics summary
         st.caption(f"""
         **Estadísticas de pasos:**
         - Mínimo: {int(stats_row.get('min_steps', 0))} pasos
@@ -184,11 +167,12 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     st.divider()
 
-    # --- Permanence Boxplot (full-width) ---
+    # ================================================================
+    # 3. PERMANENCIA POR DEPENDENCIA
+    # ================================================================
     st.subheader("Permanencia por Dependencia")
 
     if not permanence_df.empty:
-        # Filter out final steps (None permanence) and Archivo Digital
         valid_permanence = permanence_df[
             permanence_df["permanence_days"].notna() &
             (permanence_df["permanence_days"] >= 0) &
@@ -206,7 +190,6 @@ def render_conceptos_page(filters: FilterState) -> None:
             )
             st.plotly_chart(fig, width="stretch")
 
-            # Show summary stats
             dep_stats = valid_permanence.groupby("dependencia")["permanence_days"].agg([
                 "count", "mean", "median", "std", "min", "max"
             ]).round(1).sort_values("count", ascending=False)
@@ -233,7 +216,50 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     st.divider()
 
-    # --- Additional: Step Statistics Summary ---
+    # ================================================================
+    # 4. FRECUENCIA DE CIRCUITOS
+    # ================================================================
+    st.subheader("Frecuencia de Circuitos")
+
+    display_df = circuitos_df.copy()
+
+    def format_circuit(circuito_json: str) -> str:
+        try:
+            circuit = json.loads(circuito_json)
+            return " → ".join(circuit)
+        except (json.JSONDecodeError, TypeError):
+            return str(circuito_json)
+
+    display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
+    display_df["Frecuencia"] = display_df["frecuencia"]
+    display_df["% del total"] = (display_df["frecuencia"] / display_df["frecuencia"].sum() * 100).round(1)
+    display_df["Es Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅ Sí" if x else "No")
+
+    def highlight_modal(row):
+        if row["Es Modal"] == "✅ Sí":
+            return ["background-color: #E8F5E9"] * len(row)
+        return [""] * len(row)
+
+    st.dataframe(
+        display_df[["Circuito", "Frecuencia", "% del total", "Es Modal"]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Circuito": st.column_config.TextColumn("Circuito", width="large"),
+            "Frecuencia": st.column_config.NumberColumn("Frecuencia", format="%d"),
+            "% del total": st.column_config.NumberColumn("% del total", format="%.1f%%"),
+            "Es Modal": st.column_config.TextColumn("Es Modal", width="small"),
+        },
+    ).style.apply(highlight_modal, axis=1) if hasattr(st, 'style') else None
+
+    fig_table = circuit_frequency_table(circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35))
+    st.plotly_chart(fig_table, width="stretch")
+
+    st.divider()
+
+    # ================================================================
+    # 5. ESTADÍSTICAS COMPLETAS DE PASOS
+    # ================================================================
     with st.expander("📈 Ver estadísticas completas de pasos"):
         if not step_stats_df.empty:
             st.dataframe(

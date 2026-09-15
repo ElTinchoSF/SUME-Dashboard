@@ -81,6 +81,13 @@ def reset_filters() -> None:
     st.session_state[DEPENDENCIAS_KEY] = []
     st.session_state[ASUNTOS_KEY] = []
 
+    # Reset widget keys directly so Streamlit clears internal widget state
+    st.session_state["filter_date_start"] = start_of_year
+    st.session_state["filter_date_end"] = end_of_year
+    st.session_state["filter_conceptos"] = []
+    st.session_state["filter_dependencias"] = []
+    st.session_state["filter_asuntos"] = []
+
 
 def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
     """
@@ -102,6 +109,8 @@ def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
     col1, col2 = st.columns(2)
 
     with col1:
+        # Set widget key before rendering so Streamlit picks up reset values
+        st.session_state["filter_date_start"] = current_range[0]
         start_date = st.date_input(
             "Fecha inicio",
             value=current_range[0],
@@ -110,6 +119,8 @@ def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
         )
 
     with col2:
+        # Set widget key before rendering so Streamlit picks up reset values
+        st.session_state["filter_date_end"] = current_range[1]
         end_date = st.date_input(
             "Fecha fin",
             value=current_range[1],
@@ -148,15 +159,18 @@ def render_concepto_filter() -> list[str]:
     conceptos_df = load_conceptos()
     all_conceptos = conceptos_df["concepto"].tolist() if not conceptos_df.empty else []
 
+    # Read current selection from session state (reset_filters sets this to [])
     current = st.session_state.get(CONCEPTOS_KEY, [])
 
     # Ensure current selection is valid
     current = [c for c in current if c in all_conceptos]
 
+    # Set the widget key before rendering so Streamlit picks it up
+    st.session_state["filter_conceptos"] = current
+
     selected = st.multiselect(
         "Conceptos",
         options=all_conceptos,
-        default=current,
         key="filter_conceptos",
         help="Filtrar por tipo de trámite/concepto",
         placeholder="Seleccionar conceptos...",
@@ -206,15 +220,18 @@ def render_dependencia_filter() -> list[str]:
     deps_df = load_dependencias()
     all_dependencias = deps_df["nombre"].tolist() if not deps_df.empty else []
 
+    # Read current selection from session state (reset_filters sets this to [])
     current = st.session_state.get(DEPENDENCIAS_KEY, [])
 
     # Ensure current selection is valid
     current = [d for d in current if d in all_dependencias]
 
+    # Set the widget key before rendering so Streamlit picks it up
+    st.session_state["filter_dependencias"] = current
+
     selected = st.multiselect(
         "Dependencias",
         options=all_dependencias,
-        default=current,
         key="filter_dependencias",
         help="Filtrar por dependencias por donde pasó el expediente (búsqueda con autocompletado)",
         placeholder="Buscar y seleccionar dependencias...",
@@ -271,6 +288,7 @@ def render_asunto_filter() -> list[str]:
 
     all_asuntos = asuntos_df["asunto"].unique().tolist() if not asuntos_df.empty else []
 
+    # Read current selection from session state (reset_filters sets this to [])
     current = st.session_state.get(ASUNTOS_KEY, [])
 
     # Ensure current selection is valid
@@ -280,10 +298,12 @@ def render_asunto_filter() -> list[str]:
     disabled = not selected_conceptos
     placeholder = "Primero seleccione un concepto..." if disabled else "Seleccionar asuntos..."
 
+    # Set the widget key before rendering so Streamlit picks it up
+    st.session_state["filter_asuntos"] = current
+
     selected = st.multiselect(
         "Asuntos",
         options=all_asuntos,
-        default=current,
         key="filter_asuntos",
         help="Filtrar por asunto/tipo de trámite (disponible solo con un concepto seleccionado)",
         placeholder=placeholder,
