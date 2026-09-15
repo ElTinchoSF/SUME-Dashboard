@@ -161,8 +161,9 @@ class SUMEScraper:
                 listing = parse_listing_page(page_html, self.config.base_url)
                 self._process_listing_expedientes(listing.expedientes, page_num)
             
-            # 4. Actualizar asuntos
-            self._update_asuntos()
+            # 4. Actualizar asuntos (solo si hay expedientes nuevos)
+            if self.stats.expedientes_inserted > 0:
+                self._update_asuntos()
             
         except Exception as e:
             logger.exception(f"Error durante el scraping: {e}")

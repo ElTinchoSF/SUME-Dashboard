@@ -37,8 +37,11 @@ Ejemplos de uso:
   # Scraping incremental (actualiza existentes)
   python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-06-30
 
-  # Limpiar DB antes de scraping
+  # Limpiar DB antes de scraping (preserva asuntos)
   python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --clean
+
+  # Limpiar DB y asuntos antes de scraping
+  python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --clean-all
 
   # Scraping limitado (testing)
   python -m src.sume_scraper --faculty FBCB --max-pages 5
@@ -70,6 +73,11 @@ Ejemplos de uso:
         "--clean",
         action="store_true",
         help="Limpiar DB antes de scraping (cuidado: elimina todos los datos)",
+    )
+    parser.add_argument(
+        "--clean-all",
+        action="store_true",
+        help="Limpiar DB y asuntos antes de scraping (cuidado: elimina TODO)",
     )
     parser.add_argument(
         "--max-pages",
@@ -107,14 +115,17 @@ Ejemplos de uso:
         )
         
         # Limpiar DB si se solicita
-        if args.clean:
+        if args.clean or args.clean_all:
+            preserve_asuntos = not args.clean_all
             print(f"⚠️  Limpiando base de datos: {config.db_path}")
+            if not preserve_asuntos:
+                print("   ⚠️  También se eliminarán los asuntos")
             response = input("¿Estás seguro? (s/N): ")
             if response.lower() != "s":
                 print("Operación cancelada.")
                 return 0
             
-            _clean_database(config.db_path)
+            _clean_database(config.db_path, preserve_asuntos=preserve_asuntos)
             print("✓ Base de datos limpiada")
         
         # Crear y ejecutar scraper
@@ -163,12 +174,16 @@ Ejemplos de uso:
         return 1
 
 
-def _clean_database(db_path: str) -> None:
+def _clean_database(db_path: str, preserve_asuntos: bool = True) -> None:
     """
     Limpiar la base de datos.
     
     Elimina todos los datos de las tablas principales
     pero mantiene el esquema.
+    
+    Args:
+        db_path: Ruta a la base de datos
+        preserve_asuntos: Si es True, preserva los asuntos existentes (default: True)
     """
     import sqlite3
     
@@ -178,10 +193,13 @@ def _clean_database(db_path: str) -> None:
     tables_to_clean = [
         "expediente_asuntos",
         "movimientos",
-        "asuntos",
         "expedientes",
         "dependencias",
     ]
+    
+    # Solo eliminar asuntos si no se deben preservar
+    if not preserve_asuntos:
+        tables_to_clean.append("asuntos")
     
     for table in tables_to_clean:
         conn.execute(f"DELETE FROM {table}")
