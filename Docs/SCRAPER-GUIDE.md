@@ -1,22 +1,31 @@
-# SUME Scraper — Guía Técnica
+# SUME Scraper — Guía Técnica (v2)
 
 ## Resumen
 
-Scraper para extraer expedientes y movimientos de SUME (Sistema Único de Mesa de Entradas) de la FBCB-UNL. Diseñado para obtener datos de circuitos administrativos con fines de certificación ISO 9001.
+Scraper reutilizable para extraer expedientes y movimientos de SUME (Sistema Único de Mesa de Entradas) de la UNL. Diseñado para soportar múltiples unidades académicas con configuración por código de facultad.
 
-**Resultado actual**: 1,615 expedientes, 16,096 movimientos (dataset anual 2025 completo).
+**Características principales:**
+- ✅ Reutilizable para cualquier facultad de la UNL
+- ✅ Scraping por rangos de fecha (ISO y formato local)
+- ✅ Actualización incremental (insert + update)
+- ✅ Validaciones post-scraping
+- ✅ Movimientos completos (sin importar fecha del último movimiento)
 
 ---
 
 ## Arquitectura
 
 ```
-src/scraper/
-├── config.py        # Configuración tipada (Pydantic)
+src/sume_scraper/
+├── __init__.py      # Exportaciones públicas
+├── __main__.py      # Punto de entrada para python -m
+├── config.py        # Configuración tipada (dataclass)
 ├── client.py        # HTTP client con retry, rate limiting, logging
 ├── parser.py        # Parsing HTML de páginas de SUME
 ├── normalizer.py    # Normalización de nombres de dependencias
-└── main.py          # Orquestador del flujo completo
+├── scraper.py       # Lógica principal de scraping
+├── validator.py     # Validaciones post-scraping
+└── cli.py           # Interfaz de línea de comandos
 ```
 
 ### Flujo de datos
@@ -28,380 +37,240 @@ src/scraper/
 └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
        │                   │                   │                   │
        │                   │                   │                   │
-   POST a             Extrae            Extrae movimientos   Persiste en
-   buscar/            datos del         de cada expediente   transacción
-   con filtros        expediente        (tabla de pases)     única
+   POST a             Extrae            Extrae movimientos   Insert o Update
+   buscar/            datos del         de cada expediente   (upsert)
+   con filtros        expediente        (tabla de pases)
+```
+
+---
+
+## Instalación y Configuración
+
+### Requisitos
+- Python 3.11+
+- Dependencias: `requests`, `beautifulsoup4`, `lxml`, `pydantic`
+
+### Configuración
+El scraper usa un `ScraperConfig` con los siguientes campos:
+
+```python
+from src.sume_scraper import ScraperConfig
+
+config = ScraperConfig(
+    faculty_code="FBCB",           # Código de facultad (requerido)
+    date_from="2025-01-01",        # Fecha inicio (opcional)
+    date_to="2025-12-31",          # Fecha fin (opcional)
+    base_url="https://...",        # URL base de SUME
+    delay_seconds=0.5,             # Delay entre requests
+    timeout_seconds=30,            # Timeout HTTP
+    max_retries=3,                 # Reintentos máximos
+    raw_html_dir="data/raw",       # Directorio para HTML crudo
+    db_path="data/sume.db",        # Ruta a la DB SQLite
+)
+```
+
+### Formato de Fechas
+El scraper acepta dos formatos:
+- **ISO**: `YYYY-MM-DD` (ej: `2025-01-01`)
+- **Local**: `DD/MM/YYYY` (ej: `01/01/2025`)
+
+Ambos se convierten internamente a ISO para procesamiento.
+
+---
+
+## Uso
+
+### CLI (Recomendado)
+
+```bash
+# Scraping completo de FBCB para 2025
+python -m src.sume_scraper \
+  --faculty FBCB \
+  --date-from 2025-01-01 \
+  --date-to 2025-12-31
+
+# Scraping con validación
+python -m src.sume_scraper \
+  --faculty FBCB \
+  --date-from 2025-01-01 \
+  --date-to 2025-12-31 \
+  --validate
+
+# Scraping incremental (actualiza existentes)
+python -m src.sume_scraper \
+  --faculty FBCB \
+  --date-from 2025-01-01 \
+  --date-to 2025-06-30
+
+# Limpiar DB antes de scraping
+python -m src.sume_scraper \
+  --faculty FBCB \
+  --date-from 2025-01-01 \
+  --date-to 2025-12-31 \
+  --clean
+
+# Scraping limitado (testing)
+python -m src.sume_scraper \
+  --faculty FBCB \
+  --max-pages 5
+
+# Scraping de otra facultad
+python -m src.sume_scraper \
+  --faculty FCA \
+  --date-from 2025-01-01 \
+  --date-to 2025-12-31
+
+# Modo verbose
+python -m src.sume_scraper \
+  --faculty FBCB \
+  --date-from 2025-01-01 \
+  --date-to 2025-12-31 \
+  --verbose
+```
+
+### API Python
+
+```python
+from src.sume_scraper import SUMEScraper, ScraperConfig, ScrapingValidator
+
+# Crear configuración
+config = ScraperConfig(
+    faculty_code="FBCB",
+    date_from="2025-01-01",
+    date_to="2025-12-31",
+)
+
+# Ejecutar scraping
+scraper = SUMEScraper(config)
+result = scraper.run()
+result.print_summary()
+
+# Ejecutar validaciones
+validator = ScrapingValidator(config.db_path)
+validation = validator.validate()
+validation.print_summary()
+```
+
+---
+
+## Comportamiento de Actualización
+
+### Scraping Incremental
+El scraper soporta actualización incremental:
+
+1. **Si el expediente NO existe**: Se inserta con todos sus movimientos
+2. **Si el expediente YA existe**: Se reemplazan TODOS los movimientos
+
+Esto permite:
+- Actualizar datos sin perder registros existentes
+- Ejecutar múltiples scrapings parciales (ej: por semestre)
+- Corregir datos parciales sin empezar de cero
+
+### Ejemplo de Flujo
+```bash
+# 1. Scraping primer semestre
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-06-30
+
+# 2. Scraping segundo semestre (actualiza el primero)
+python -m src.sume_scraper --faculty FBCB --date-from 2025-07-01 --date-to 2025-12-31
+
+# 3. Actualizar todos los datos
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31
+```
+
+---
+
+## Limpieza de Base de Datos
+
+### Opción 1: Usar CLI
+```bash
+python -m src.sume_scraper --faculty FBCB --clean --date-from 2025-01-01 --date-to 2025-12-31
+```
+
+### Opción 2: SQL Directo
+```sql
+-- Eliminar datos en orden correcto (respetar foreign keys)
+DELETE FROM expediente_asuntos;
+DELETE FROM movimientos;
+DELETE FROM asuntos;
+DELETE FROM expedientes;
+DELETE FROM dependencias;
+```
+
+### Opción 3: Python
+```python
+from src.sume_scraper.cli import _clean_database
+
+_clean_database("data/sume.db")
+```
+
+**⚠️ IMPORTANTE**: La limpieza elimina TODOS los datos. Use con precaución.
+
+---
+
+## Validaciones Post-Scraping
+
+El scraper incluye un validador que verifica:
+
+### 1. Integridad del Esquema
+- Verifica que todas las tablas requeridas existan
+
+### 2. Integridad de Datos
+- Expedientes sin número
+- Expedientes sin concepto
+- Expedientes sin fecha
+- Movimientos sin dependencia
+
+### 3. Duplicados
+- Detecta expedientes duplicados por número
+
+### 4. Rangos de Fechas
+- Verifica que el rango de fechas sea razonable
+- Detecta fechas fuera de rango
+
+### 5. Completitud
+- Calcula porcentaje de expedientes con movimientos
+- Identifica expedientes incompletos
+
+### Uso
+```bash
+# Con validación
+python -m src.sume_scraper --faculty FBCB --validate
+
+# Solo validación (sin scraping)
+python -c "
+from src.sume_scraper import ScrapingValidator
+validator = ScrapingValidator('data/sume.db')
+report = validator.validate()
+report.print_summary()
+"
 ```
 
 ---
 
 ## Estructura de SUME (2026)
 
-### Header Search (Búsqueda Simple)
-
-**Endpoint**: `POST https://servicios.unl.edu.ar/expedientes/buscar/`
-
-**Parámetros**:
+### Búsqueda Correcta
 ```python
 {
-    "header_search": "numero",      # Buscar por número
-    "header_search_text": "FBCB"    # Filtro por facultad
+    "numero": "FBCB",           # Código de facultad
+    "fechaCdesde": "01/01/2025", # Fecha desde (DD/MM/YYYY)
+    "fechaChasta": "31/12/2025", # Fecha hasta (DD/MM/YYYY)
+    # ... otros campos vacíos
 }
 ```
 
-**Resultado**: Página con tabla de resultados y paginación.
-
-**Por qué funciona**: SUME permite buscar expedientes por prefijo del número. "FBCB" trae todos los expedientes de la Facultad de Bioquímica y Ciencias Biológicas.
-
-### Advanced Search (Búsqueda Avanzada)
-
-**Endpoint**: `POST https://servicios.unl.edu.ar/expedientes/buscar/`
-
-**Parámetros requeridos** (TODOS deben estar presentes, incluso vacíos):
-```python
-{
-    "numero": "",                    # Filtro por número
-    "descripcion": "",               # Filtro por descripción
-    "palabraClave": "",              # Palabra clave
-    "selectOrigen": "interno",       # Tipo de origen (interno/externo)
-    "mesaEntrada": "5",              # ID de Mesa de Entradas - FBCB
-    "oficina": "5",                  # CRÍTICO: auto-seleccionado por JS
-    "concepto": "",                  # Filtro por concepto
-    "fechaCdesde": "",               # Fecha desde (DD/MM/YYYY)
-    "fechaChasta": "",               # Fecha hasta (DD/MM/YYYY)
-    "tipoDR": "",                    # Tipo de documento respaldo
-    "numeroDR": "",                  # Número de documento respaldo
-}
-```
-
-**Descubrimiento crítico**: El parámetro `oficina=5` es **obligatorio** cuando se selecciona `mesaEntrada=5` (FBCB). JavaScript del navegador auto-selecciona la oficina cuando cambias la mesa de entrada. Sin este parámetro:
-- SUME retorna 4,200+ páginas (todos los expedientes de FBCB, no solo Mesa de Entradas)
-- Con `oficina=5`: 73 páginas (solo Mesa de Entradas)
-
-**Formato de fechas**: DD/MM/YYYY (no ISO). El conversor en `config.py` transforma YYYY-MM-DD → DD/MM/YYYY.
-
-### Detalle de Expediente
-
-**Endpoint**: `GET https://servicios.unl.edu.ar/expedientes/expediente/{numero}`
-
-**Contenido**: Solo tabla de movimientos (pases). No hay datos del expediente en esta página.
-
-**Por qué**: La nueva versión de SUME (2026) separó la información: datos básicos en el listing, movimientos en el detalle.
+**Por qué funciona**: SUME permite buscar por prefijo del número. "FBCB" trae todos los expedientes de la Facultad de Bioquímica y Ciencias Biológicas.
 
 ### Paginación
-
-**Formato**: `buscar/{pagina}/`
-
-**Característica especial**: SUME muestra `...9104` en la paginación para indicar el total de páginas. El parser detecta este formato:
-
-```python
-# parser.py - Línea 140-145
-elif text.startswith("..."):
-    try:
-        total_from_ellipsis = int(text[3:])
-        max_page = max(max_page, total_from_ellipsis)
-    except ValueError:
-        pass
-```
-
-**Por qué**: SUME no muestra todas las páginas en la paginación. Usa `...{total}` para indicar cuántas hay.
-
----
-
-## Configuración Detallada
-
-### HTTP Client (`client.py`)
-
-| Parámetro | Valor | Por qué |
-|-----------|-------|---------|
-| `delay_seconds` | 0.5s | Respetar el servidor; evitar rate limiting |
-| `timeout_seconds` | 30s | SUME puede ser lento en horas pico |
-| `max_retries` | 3 | Transitorios de red (500, 502, 503, 504) |
-| `backoff_base` | 1.0s | Exponencial: 1s, 2s, 4s entre reintentos |
-| `rate_limit_wait` | 60s | Espera en 429 Too Many Requests |
-| `rate_limit_retries` | 3 | Reintentos después de rate limit |
-
-**User-Agent**:
-```
-SUME-Dashboard/1.0 (Mesa de Entradas FBCB-UNL)
-```
-Identifica el scraper como herramienta institucional, no como bot genérico.
-
-**Headers**:
-```python
-{
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
-    "Connection": "keep-alive"
-}
-```
-Simula un navegador real con preferencia de español argentino.
-
-### Selectores CSS (`config.py`)
-
-```python
-# Listing page
-listing_table = "table.table"           # Tabla de resultados
-listing_rows = "tbody tr"               # Filas del cuerpo
-listing_detail_link = "td:first-child"  # Primera celda (número)
-
-# Detail page
-detail_numero = "h4.label"             # Número del expediente
-movimientos_table = "table.table"      # Tabla de movimientos
-movimientos_rows = "tbody tr"          # Filas de movimientos
-movimientos_cells = "td"               # Celdas de cada fila
-```
-
-**Por qué estos selectores**: SUME usa Bootstrap 3 con clases genéricas `table`, `panel-body`, etc. No hay IDs o clases únicas, por lo que se depende de la estructura del DOM.
-
-### Normalización de Dependencias (`normalizer.py`)
-
-**Objetivo**: Preservar información de facultad en nombres de dependencias.
-
-**Ejemplos**:
-```
-"Despacho General (Mesa de Entradas - FBCB)" → "Despacho General (FBCB)"
-"Mesa de Entradas - FBCB"                     → "Mesa de Entradas - FBCB" (preservado)
-"CETRI (Mesa de Entradas - Rectorado)"       → "CETRI (Rectorado)"
-"MDE"                                         → "Mesa de Entradas" (override explícito)
-```
-
-**Reglas de precedencia**:
-1. **Overrides explícitos** (máxima precedencia): `MDE` → `Mesa de Entradas`
-2. **Parseo de paréntesis**: Extrae facultad de `(Mesa de Entradas - FACULTAD)` o `(FACULTAD)`
-3. **Preservación de MDE**: Nombres exactos como `Mesa de Entradas` se mantienen
-4. **Identidad**: Si no hay regla, retorna sin cambios
-
-**Por qué**: El análisis de circuitos necesita agrupar dependencias correctamente. Sin normalización, "Despacho General (FBCB)" y "Despacho General (Rectorado)" serían distintas, aunque son la misma dependencia en facultades diferentes.
-
-**Garantía de idempotencia**: `normalize(normalize(x)) == normalize(x)`. Se puede aplicar músinormalizar una vez o cien veces, el resultado es el mismo.
-
----
-
-## Flujo de Scraping
-
-### 1. Búsqueda Inicial
-
-```python
-# main.py - ScraperOrchestrator.run()
-first_page_result = self._fetch_listing_page(1)
-```
-
-- Usa `POST` a `buscar/` con parámetros de búsqueda
-- Si hay filtros de fecha, usa advanced search
-- Si no, usa header search
-
-### 2. Procesamiento de Páginas
-
-```python
-# Para cada página:
-listing = parse_listing_page(html, base_url)
-stop = self._process_listing_expedientes(listing.expedientes, page_num)
-```
-
-**Lógica de early stop** (optimización):
-```python
-# main.py - _process_listing_expedientes()
-all_before_date_from = True
-
-for expediente in expedientes:
-    if expediente.fecha_alta < date_from:
-        continue  # Saltar este expediente
-    else:
-        all_before_date_from = False  # Hay al menos uno en rango
-
-# Solo parar si TODOS están fuera de rango
-if all_before_date_from:
-    return True  # Parar scraping
-```
-
-**Por qué**: Los expedientes están ordenados por fecha (más recientes primero). Si en una página todos son anteriores a `date_from`, no tiene sentido seguir paginando hacia atrás.
-
-### 3. Procesamiento de Cada Expediente
-
-```python
-# Para cada expediente:
-movimientos = self._fetch_and_parse_movimientos(expediente)
-
-# Normalizar dependencias
-for mov in movimientos:
-    mov.dependencia = normalize(mov.dependencia, self.normalizer_rules)
-
-# Persistir en transacción única
-self._persist_expediente(expediente, movimientos)
-```
-
-### 4. Persistencia
-
-```python
-# main.py - _persist_expediente()
-with transaction() as conn:
-    # Verificar duplicado
-    existing = conn.execute(
-        "SELECT id FROM expedientes WHERE numero = ?",
-        (expediente.numero,)
-    ).fetchone()
-    
-    if existing:
-        self.stats.duplicate_expedientes += 1
-        return  # Saltar duplicado
-    
-    # Insertar expediente
-    cursor = conn.execute(
-        "INSERT INTO expedientes (...) VALUES (...)",
-        (...)
-    )
-    expediente_id = cursor.lastrowid
-    
-    # Insertar movimientos (invertir orden)
-    for i, mov in enumerate(reversed(movimientos), start=1):
-        conn.execute(
-            "INSERT INTO movimientos (expediente_id, orden, fecha_recepcion, dependencia) VALUES (?, ?, ?, ?)",
-            (expediente_id, i, mov.fecha_recepcion, mov.dependencia)
-        )
-```
-
-**Decisión clave**: `reversed(movimientos)` — SUME muestra movimientos del más reciente al más antiguo (orden inverso cronológico). Al invertir, `orden=1` es el más antiguo (primera recepción), lo cual es más intuitivo para análisis de circuitos.
-
-**Constraint UNIQUE**: `expedientes.numero` previene duplicados. Si el mismo expediente aparece en múltiples búsquedas, se ignora silenciosamente.
-
----
-
-## Decisiones de Diseño
-
-### 1. Parsing Directo (No Selenium/Playwright)
-
-**Decisión**: Usar BeautifulSoup + requests en lugar de un browser headless.
-
-**Por qué**:
-- SUME no requiere JavaScript para mostrar datos (solo para el dropdown de oficinas, que resolvemos con parámetros)
-- Más rápido: ~0.5s por request vs ~2-5s con browser
-- Menos recursos: no necesita Chrome/Firefox
-- Más estable: no depende de versiones de navegador
-
-### 2. Extracción de Datos del Listing (No del Detalle)
-
-**Decisión**: Extraer número, concepto, descripción, fecha_alta del listing page, no del detail page.
-
-**Por qué**: La página de detalle de SUME (2026) solo muestra la tabla de movimientos. Los datos básicos del expediente están en el listing.
-
-### 3. Transacción por Expediente
-
-**Decisión**: Cada expediente se persiste en su propia transacción.
-
-**Por qué**:
-- Si falla un expediente, los anteriores se mantienen
-- Permite reanudar el scraping después de un error
-- Evita transacciones demasiado largas que bloqueen la DB
-
-### 4. Normalización Configurable (YAML)
-
-**Decisión**: Reglas de normalización en archivo YAML, no en código.
-
-**Por qué**:
-- Fácil de modificar sin cambiar código
-- Permite overrides explícitos para casos edge
-- Versionable y auditable
-- Separación de responsabilidades
-
-### 5. Filtros de Fecha Post-Scrape
-
-**Decisión**: Filtrar por fecha DURANTE el scraping (no después).
-
-**Por qué**:
-- Evita descargar expedientes innecesarios
-- Reduce tiempo de ejecución significativamente
-- Early stop cuando no hay más expedientes en rango
-
-### 6. Inversión de Orden de Movimientos
-
-**Decisión**: Invertir el orden de movimientos al persistir (`reversed(movimientos)`).
-
-**Por qué**: SUME muestra el más reciente primero. Para análisis de circuitos, es más intuitivo que `orden=1` sea el primero (más antiguo).
-
----
-
-## Errores Conocidos y Soluciones
-
-### 1. "KeyError: 'concepto'" en Dashboard
-
-**Problema**: El SQL de `data.py` no incluía `concepto` en el SELECT.
-
-**Solución**: Agregar `concepto` a la query SQL:
-```python
-query = "SELECT numero, concepto, fecha_alta, palabras_clave, origenes FROM expedientes"
-```
-
-### 2. Fechas Fuera de Rango
-
-**Problema**: SUME retorna expedientes de otros años al buscar por rango de fechas.
-
-**Solución**: Limpieza post-scrape con DELETE:
-```sql
-DELETE FROM movimientos WHERE expediente_id IN (
-    SELECT id FROM expedientes WHERE fecha_alta < '2025-01-01'
-);
-DELETE FROM expedientes WHERE fecha_alta < '2025-01-01';
-```
-
-### 3. Paginación con "...9104"
-
-**Problema**: SUME no muestra todas las páginas, usa `...{total}`.
-
-**Solución**: Parser detecta formato `...NNNN`:
-```python
-elif text.startswith("..."):
-    total_from_ellipsis = int(text[3:])
-```
-
-### 4. oficina=5 Auto-Select
-
-**Problema**: Sin `oficina=5`, la búsqueda retorna todos los expedientes de FBCB (4,200+ páginas).
-
-**Solución**: Incluir `oficina=5` en parámetros de advanced search. Este valor es auto-seleccionado por JavaScript cuando `mesaEntrada=5`.
-
-### 5. Duplicados entre Semestres
-
-**Problema**: Al scrapear primer y segundo semestre por separado, algunos expedientes aparecen en ambos (creados en un semestre pero con movimientos en el otro).
-
-**Solución**: Constraint UNIQUE en `expedientes.numero` + verificación de duplicado antes de insertar.
-
----
-
-## Comandos de Uso
-
-### Scraping Completo (2025)
-
-```bash
-# Primer semestre (enero-junio 2025)
-python -m src.pipeline run --phase scraper \
-  --date-from 2025-01-01 --date-to 2025-06-30
-
-# Segundo semestre (julio-diciembre 2025)
-python -m src.pipeline run --phase scraper \
-  --date-from 2025-07-01 --date-to 2025-12-31
-```
-
-### Scraping Limitado (Testing)
-
-```bash
-# Solo primeras 5 páginas
-python -m src.pipeline run --phase scraper --max-pages 5
-```
-
-### Scraping sin Filtros
-
-```bash
-# Todos los expedientes de FBCB
-python -m src.pipeline run --phase scraper
-```
-
-### Pipeline Completo
-
-```bash
-# Inicializar DB + Scraping + Análisis + Reporte
-python -m src.pipeline run --phase all
-```
+- **Formato**: `buscar/{pagina}/`
+- **Total**: SUME muestra `...{total}` en la paginación
+- **Por página**: ~10 expedientes
+
+### Detalle de Expediente
+- **Endpoint**: `GET /expediente/{numero}`
+- **Contenido**: Solo tabla de movimientos (pases)
+- **Los datos básicos están en el listing**
 
 ---
 
@@ -412,77 +281,59 @@ python -m src.pipeline run --phase all
 | Tiempo promedio por request | ~0.5s |
 | Tiempo promedio por expediente | ~1.5s (listing + detail) |
 | Páginas por minuto | ~10-15 |
-| Tiempo estimado dataset anual | ~3-4 horas |
+| Tiempo estimado 3,740 expedientes | ~1-2 horas |
 
-**Optimizaciones aplicadas**:
-- Early stop con filtros de fecha
+**Optimizaciones aplicadas:**
 - Connection pooling (requests.Session)
 - Rate limiting para evitar 429
-- Solo se extraen datos necesarios (no HTML completo)
-
----
-
-## Extensibilidad
-
-### Agregar Nuevo Campo
-
-1. Actualizar `ExpedienteDict` en `parser.py`
-2. Actualizar `parse_listing_page()` o `parse_detail_page()`
-3. Actualizar schema en `database/schema.sql`
-4. Actualizar `INSERT` en `_persist_expediente()`
-5. Actualizar queries en `data.py` del dashboard
-
-### Cambiar Filtros de Búsqueda
-
-1. Actualizar `_get_advanced_search_params()` en `config.py`
-2. Agregar nuevos parámetros al dict `params`
-3. Documentar en esta guía
-
-### Agregar Nueva Dependencia
-
-1. Agregar regla en `config/normalization_rules.yaml`
-2. Si es override explícito, agregar a `explicit_overrides`
-3. Probar con `normalize()` en Python
+- Solo se extraen datos necesarios
 
 ---
 
 ## Troubleshooting
 
 ### "HTTP Error 429 Too Many Requests"
-
 **Causa**: Demasiadas requests en poco tiempo.
-
 **Solución**: Aumentar `delay_seconds` en config:
 ```python
-config = ScraperConfig(delay_seconds=1.0)  # Default: 0.5
+config = ScraperConfig(faculty_code="FBCB", delay_seconds=1.0)
 ```
 
-### "HTTP Error 420" (para búsqueda avanzada)
-
+### "HTTP Error 420"
 **Causa**: Faltan parámetros en la búsqueda avanzada.
-
-**Solución**: Verificar que TODOS los parámetros estén presentes, especialmente `oficina=5`.
-
-### "ParseError: unexpected end of tag"
-
-**Causa**: HTML malformado de SUME.
-
-**Solución**: BeautifulSoup es tolerante, pero si persiste, guardar HTML crudo y analizar:
-```python
-client.save_raw_html(content, "debug_page")
-```
+**Solución**: Verificar que TODOS los parámetros estén presentes.
 
 ### "Database is locked"
-
 **Causa**: Múltiples instancias del scraper corriendo.
+**Solución**: Asegurar que solo una instancia acceda a la DB.
 
-**Solución**: Asegurar que solo una instancia acceda a la DB. SQLite no soporta escritura concurrente.
+### "ParseError: unexpected end of tag"
+**Causa**: HTML malformado de SUME.
+**Solución**: BeautifulSoup es tolerante, pero si persiste, guardar HTML crudo para análisis.
+
+---
+
+## Extensibilidad
+
+### Agregar Nueva Facultad
+1. Conocer el código de la facultad en SUME (ej: "FCA", "FCV")
+2. Ejecutar: `python -m src.sume_scraper --faculty CODIGO --date-from ... --date-to ...`
+
+### Agregar Nuevo Campo
+1. Actualizar `ExpedienteDict` en `parser.py`
+2. Actualizar `parse_listing_page()` o `parse_detail_page()`
+3. Actualizar schema en `database/schema.py`
+4. Actualizar `INSERT` en `_upsert_expediente()`
+
+### Cambiar Filtros de Búsqueda
+1. Actualizar `get_search_params()` en `config.py`
+2. Agregar nuevos parámetros al dict `params`
 
 ---
 
 ## Referencias
 
 - [SUME FBCB-UNL](https://servicios.unl.edu.ar/expedientes/)
-- [ISO 9001:2015 - Requisitos para sistemas de gestión de calidad](https://www.iso.org/standard/62085.html)
+- [ISO 9001:2015](https://www.iso.org/standard/62085.html)
 - [BeautifulSoup Documentation](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
-- [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+- [Python dataclasses](https://docs.python.org/3/library/dataclasses.html)
