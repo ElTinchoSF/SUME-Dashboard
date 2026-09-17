@@ -41,7 +41,7 @@ def render_circuitos_page(filters: FilterState) -> None:
         return
 
     # Concepto selector and Asunto selector
-    col_concepto, col_asunto, col_toggle = st.columns([2, 2, 1])
+    col_concepto, col_asunto = st.columns([2, 2])
 
     with col_concepto:
         selected_concepto = st.selectbox(
@@ -70,16 +70,6 @@ def render_circuitos_page(filters: FilterState) -> None:
             index=0 if current_asunto is None else all_asuntos.index(current_asunto) + 1,
             key="circuitos_asunto_selector",
             help="Filtrar por tipo de trámite específico (opcional)",
-        )
-
-    with col_toggle:
-        view_mode = st.radio(
-            "Vista",
-            options=["Solo Modal", "Todos los Circuitos"],
-            index=0,
-            horizontal=True,
-            key="circuitos_view_mode",
-            help="Ver solo el circuito modal o comparar todos",
         )
 
     if not selected_concepto:
@@ -112,13 +102,75 @@ def render_circuitos_page(filters: FilterState) -> None:
         st.warning(f"No hay circuitos registrados para el concepto '{selected_concepto}'.")
         return
 
-    # Separate modal and non-modal (es_mas_frecuente is 0/1 int from SQLite)
-    is_modal = circuitos_df["es_mas_frecuente"].astype(bool)
-    modal_df = circuitos_df[is_modal]
-    other_df = circuitos_df[~is_modal]
+    # ================================================================
+    # FRECUENCIA DE CIRCUITOS (tabla clickeable)
+    # ================================================================
+    st.subheader("Frecuencia de Circuitos")
+    st.caption("Hacé click en una fila para ver el diagrama de ese circuito")
 
-    if view_mode == "Solo Modal":
-        _render_modal_view(modal_df, selected_concepto)
+    display_df = circuitos_df.copy()
+
+    def format_circuit(circuito_json: str) -> str:
+        try:
+            circuit = json.loads(circuito_json)
+            return " → ".join(circuit)
+        except (json.JSONDecodeError, TypeError):
+            return str(circuito_json)
+
+    display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
+    display_df["Frecuencia"] = display_df["frecuencia"]
+    total_freq = display_df["Frecuencia"].sum()
+    display_df["% del total"] = (display_df["Frecuencia"] / total_freq * 100).round(1)
+    display_df["Es Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅ Sí" if x else "No")
+
+    # Interactive frequency table with row selection
+    editor_result = st.dataframe(
+        display_df[["Circuito", "Frecuencia", "% del total", "Es Modal"]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Circuito": st.column_config.TextColumn("Circuito", width="large"),
+            "Frecuencia": st.column_config.NumberColumn("Frecuencia", format="%d"),
+            "% del total": st.column_config.NumberColumn("% del total", format="%.1f%%"),
+            "Es Modal": st.column_config.TextColumn("Es Modal", width="small"),
+        },
+        on_select="rerun",
+        key="circuitos_freq_table",
+    )
+
+    st.divider()
+
+    # View mode toggle
+    view_mode = st.radio(
+        "Vista",
+        options=["Solo Modal", "Todos los Circuitos"],
+        index=0,
+        horizontal=True,
+        key="circuitos_view_mode",
+        help="Ver solo el circuito modal o comparar todos",
+    )
+
+    # Check if a circuit was selected from the table
+    selected_circuit_json = None
+    if editor_result and editor_result.selection and editor_result.selection.rows:
+        selected_idx = editor_result.selection.rows[0]
+        selected_circuit_json = circuitos_df.iloc[selected_idx]["circuito_json"]
+
+    if selected_circuit_json:
+        # Show Sankey for the selected circuit
+        selected_row = circuitos_df[circuitos_df["circuito_json"] == selected_circuit_json].iloc[0]
+        frecuencia = int(selected_row["frecuencia"])
+        es_modal = bool(selected_row["es_mas_frecuente"])
+        modal_badge = " 🟢 MODAL" if es_modal else ""
+        st.subheader(f"Circuito seleccionado ({frecuencia} expedientes){modal_badge}")
+        _render_modal_view(
+            pd.DataFrame([selected_row]),
+            selected_concepto,
+            total_freq=total_freq,
+        )
+    elif view_mode == "Solo Modal":
+        modal_df = circuitos_df[circuitos_df["es_mas_frecuente"].astype(bool)]
+        _render_modal_view(modal_df, selected_concepto, total_freq=total_freq)
     else:
         _render_all_circuits_view(circuitos_df, selected_concepto)
 
@@ -129,7 +181,7 @@ def render_circuitos_page(filters: FilterState) -> None:
         _render_circuit_detail_table(circuitos_df, selected_concepto)
 
 
-def _render_modal_view(modal_df: pd.DataFrame, concepto: str) -> None:
+def _render_modal_view(modal_df: pd.DataFrame, concepto: str, total_freq: int = 0) -> None:
     """Render the modal circuit Sankey diagram."""
     st.subheader(f"Circuito Modal - {concepto}")
 
@@ -162,7 +214,7 @@ def _render_modal_view(modal_df: pd.DataFrame, concepto: str) -> None:
     with col2:
         st.metric("Pasos", len(circuit))
     with col3:
-        pct = (frecuencia / circuitos_df["frecuencia"].sum() * 100) if 'circuitos_df' in globals() else 0
+        pct = (frecuencia / total_freq * 100) if total_freq > 0 else 0
         st.metric("% del total", f"{pct:.1f}%")
 
     # Sankey diagram
@@ -201,41 +253,6 @@ def _render_all_circuits_view(circuitos_df: pd.DataFrame, concepto: str) -> None
     st.caption("Diagrama de Conjuntos Paralelos (circuitos ordenados por frecuencia)")
     fig = parallel_sets(circuitos_df, title="", height=550, max_circuits=12)
     st.plotly_chart(fig, width="stretch")
-
-    # Frequency table
-    st.caption("Tabla de frecuencias (ordenada descendente)")
-    _render_frequency_table(circuitos_df)
-
-
-def _render_frequency_table(circuitos_df: pd.DataFrame) -> None:
-    """Render a sortable frequency table."""
-    import json
-
-    display_df = circuitos_df.copy()
-
-    def format_circuit(circuito_json: str) -> str:
-        try:
-            circuit = json.loads(circuito_json)
-            return " → ".join(circuit)
-        except (json.JSONDecodeError, TypeError):
-            return str(circuito_json)
-
-    display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
-    display_df["Frecuencia"] = display_df["frecuencia"]
-    display_df["%"] = (display_df["frecuencia"] / display_df["frecuencia"].sum() * 100).round(1)
-    display_df["Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅" if x else "")
-
-    st.dataframe(
-        display_df[["Modal", "Circuito", "Frecuencia", "%"]],
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "Modal": st.column_config.TextColumn("", width="small"),
-            "Circuito": st.column_config.TextColumn("Circuito", width="large"),
-            "Frecuencia": st.column_config.NumberColumn("Frecuencia", format="%d"),
-            "%": st.column_config.NumberColumn("%", format="%.1f%%"),
-        },
-    )
 
 
 def _render_circuit_detail_table(circuitos_df: pd.DataFrame, concepto: str) -> None:

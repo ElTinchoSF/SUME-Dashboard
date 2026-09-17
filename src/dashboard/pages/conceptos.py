@@ -20,6 +20,7 @@ from src.dashboard.data import (
     load_asunto_distribution,
     ensure_asuntos_populated,
     FilterState,
+    _compute_step_stats_from_freq,
 )
 from src.dashboard.components.charts import (
     histogram_steps,
@@ -131,18 +132,77 @@ def render_conceptos_page(filters: FilterState) -> None:
     st.divider()
 
     # ================================================================
-    # 2. DISTRIBUCIÓN DE CANTIDAD DE PASOS
+    # 2. FRECUENCIA DE CIRCUITOS (tabla clickeable — va antes del histograma)
+    # ================================================================
+    st.subheader("Frecuencia de Circuitos")
+    st.caption("Hacé click en una fila para filtrar el histograma de pasos")
+
+    display_df = circuitos_df.copy()
+
+    def format_circuit(circuito_json: str) -> str:
+        try:
+            circuit = json.loads(circuito_json)
+            return " → ".join(circuit)
+        except (json.JSONDecodeError, TypeError):
+            return str(circuito_json)
+
+    display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
+    display_df["Frecuencia"] = display_df["frecuencia"]
+    display_df["% del total"] = (display_df["frecuencia"] / display_df["frecuencia"].sum() * 100).round(1)
+    display_df["Es Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅ Sí" if x else "No")
+
+    # Interactive frequency table with row selection
+    editor_result = st.dataframe(
+        display_df[["Circuito", "Frecuencia", "% del total", "Es Modal"]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Circuito": st.column_config.TextColumn("Circuito", width="large"),
+            "Frecuencia": st.column_config.NumberColumn("Frecuencia", format="%d"),
+            "% del total": st.column_config.NumberColumn("% del total", format="%.1f%%"),
+            "Es Modal": st.column_config.TextColumn("Es Modal", width="small"),
+        },
+        on_select="rerun",
+        key="conceptos_freq_table",
+    )
+
+    fig_table = circuit_frequency_table(circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35))
+    st.plotly_chart(fig_table, width="stretch")
+
+    # Check if a circuit was selected — filter step stats accordingly
+    selected_circuit_json = None
+    if editor_result and editor_result.selection and editor_result.selection.rows:
+        selected_idx = editor_result.selection.rows[0]
+        selected_circuit_json = circuitos_df.iloc[selected_idx]["circuito_json"]
+
+    # Compute step stats (filtered or full)
+    if selected_circuit_json:
+        selected_row = circuitos_df[circuitos_df["circuito_json"] == selected_circuit_json].iloc[0]
+        selected_circuit_df = pd.DataFrame([selected_row])
+        selected_circuit_df["concepto"] = selected_concepto
+        filtered_step_stats_df = _compute_step_stats_from_freq(
+            selected_circuit_df[["circuito", "concepto", "frecuencia"]]
+        )
+        filtered_circuitos_df = selected_circuit_df
+    else:
+        filtered_step_stats_df = step_stats_df
+        filtered_circuitos_df = circuitos_df
+
+    st.divider()
+
+    # ================================================================
+    # 3. DISTRIBUCIÓN DE CANTIDAD DE PASOS
     # ================================================================
     st.subheader("Distribución de Cantidad de Pasos")
 
-    if not step_stats_df.empty:
-        stats_row = step_stats_df.iloc[0]
+    if not filtered_step_stats_df.empty:
+        stats_row = filtered_step_stats_df.iloc[0]
         mean_steps = stats_row.get("mean_steps", 0)
         median_steps = stats_row.get("median_steps", 0)
         mode_steps = stats_row.get("mode_steps", 0)
 
         fig = histogram_steps(
-            circuitos_df,
+            filtered_circuitos_df,
             bins=15,
             title="",
             mean_line=mean_steps,
@@ -217,53 +277,12 @@ def render_conceptos_page(filters: FilterState) -> None:
     st.divider()
 
     # ================================================================
-    # 4. FRECUENCIA DE CIRCUITOS
-    # ================================================================
-    st.subheader("Frecuencia de Circuitos")
-
-    display_df = circuitos_df.copy()
-
-    def format_circuit(circuito_json: str) -> str:
-        try:
-            circuit = json.loads(circuito_json)
-            return " → ".join(circuit)
-        except (json.JSONDecodeError, TypeError):
-            return str(circuito_json)
-
-    display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
-    display_df["Frecuencia"] = display_df["frecuencia"]
-    display_df["% del total"] = (display_df["frecuencia"] / display_df["frecuencia"].sum() * 100).round(1)
-    display_df["Es Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅ Sí" if x else "No")
-
-    def highlight_modal(row):
-        if row["Es Modal"] == "✅ Sí":
-            return ["background-color: #E8F5E9"] * len(row)
-        return [""] * len(row)
-
-    st.dataframe(
-        display_df[["Circuito", "Frecuencia", "% del total", "Es Modal"]],
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "Circuito": st.column_config.TextColumn("Circuito", width="large"),
-            "Frecuencia": st.column_config.NumberColumn("Frecuencia", format="%d"),
-            "% del total": st.column_config.NumberColumn("% del total", format="%.1f%%"),
-            "Es Modal": st.column_config.TextColumn("Es Modal", width="small"),
-        },
-    ).style.apply(highlight_modal, axis=1) if hasattr(st, 'style') else None
-
-    fig_table = circuit_frequency_table(circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35))
-    st.plotly_chart(fig_table, width="stretch")
-
-    st.divider()
-
-    # ================================================================
-    # 5. ESTADÍSTICAS COMPLETAS DE PASOS
+    # 4. ESTADÍSTICAS COMPLETAS DE PASOS
     # ================================================================
     with st.expander("📈 Ver estadísticas completas de pasos"):
-        if not step_stats_df.empty:
+        if not filtered_step_stats_df.empty:
             st.dataframe(
-                step_stats_df,
+                filtered_step_stats_df,
                 width="stretch",
                 hide_index=True,
                 column_config={
