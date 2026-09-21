@@ -75,6 +75,7 @@ class AuthConfig(BaseSettings):
     """Authentication configuration."""
 
     enabled: bool = True
+    username: str = ""  # Set via SUME_AUTH_USERNAME env var
     password: str = ""  # Set via SUME_AUTH_PASSWORD env var
     session_hours: int = 8  # Session duration in hours
 

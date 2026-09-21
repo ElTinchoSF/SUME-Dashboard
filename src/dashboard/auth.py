@@ -36,6 +36,12 @@ def _get_stored_password_hash() -> str:
     return _hash_password(password)
 
 
+def _get_stored_username() -> str:
+    """Get the username from config (env var)."""
+    settings = get_settings()
+    return settings.auth.username
+
+
 def is_auth_enabled() -> bool:
     """Check if authentication is enabled."""
     settings = get_settings()
@@ -66,9 +72,9 @@ def is_authenticated() -> bool:
     return True
 
 
-def login(password: str) -> bool:
+def login(username: str, password: str) -> bool:
     """
-    Attempt login with the given password.
+    Attempt login with username and password.
 
     Returns True if authentication succeeds.
     """
@@ -77,6 +83,13 @@ def login(password: str) -> bool:
         logger.warning("No password configured — auth disabled")
         return True
 
+    # Validate username
+    stored_username = _get_stored_username()
+    if stored_username and username != stored_username:
+        logger.warning("Login failed — invalid username")
+        return False
+
+    # Validate password
     provided_hash = _hash_password(password)
     if hmac.compare_digest(provided_hash, stored_hash):
         st.session_state[SESSION_KEY] = True
@@ -119,18 +132,22 @@ def render_login_page() -> None:
     )
 
     with st.form("login_form"):
+        username = st.text_input(
+            "Usuario",
+            placeholder="Ingrese su usuario",
+        )
         password = st.text_input(
             "Contraseña",
             type="password",
-            placeholder="Ingrese la contraseña de acceso",
+            placeholder="Ingrese su contraseña",
         )
         submitted = st.form_submit_button("Ingresar", use_container_width=True)
 
         if submitted:
-            if login(password):
+            if login(username, password):
                 st.rerun()
             else:
-                st.error("❌ Contraseña incorrecta. Intente nuevamente.")
+                st.error("❌ Usuario o contraseña incorrectos. Intente nuevamente.")
 
 
 def require_auth() -> None:
