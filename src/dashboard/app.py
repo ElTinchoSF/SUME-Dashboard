@@ -14,15 +14,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 
+from src.dashboard.logging_config import setup_logging
+from src.dashboard.errors import render_page_error
 from src.dashboard.components.filters import render_global_filters_sidebar
 from src.dashboard.pages.overview import render_overview_page
 from src.dashboard.pages.conceptos import render_conceptos_page
 from src.dashboard.pages.circuitos import render_circuitos_page
 from src.dashboard.pages.reportes import render_reportes_page
 
+# Initialize logging on import
+logger = setup_logging()
+
 
 def main() -> None:
     """Main Streamlit application entry point."""
+
+    # Ensure logging is configured (idempotent)
+    global logger
+    logger = setup_logging()
 
     # Set wide layout to maximize content area
     st.set_page_config(
@@ -324,14 +333,17 @@ def main() -> None:
     st.divider()
 
     # Render selected page
-    if page == "📈 Vista General":
-        render_overview_page(filters)
-    elif page == "📋 Análisis por Concepto":
-        render_conceptos_page(filters)
-    elif page == "🔄 Visualización de Circuitos":
-        render_circuitos_page(filters)
-    elif page == "📑 Reportes ISO 9001":
-        render_reportes_page(filters)
+    try:
+        if page == "📈 Vista General":
+            render_overview_page(filters)
+        elif page == "📋 Análisis por Concepto":
+            render_conceptos_page(filters)
+        elif page == "🔄 Visualización de Circuitos":
+            render_circuitos_page(filters)
+        elif page == "📑 Reportes ISO 9001":
+            render_reportes_page(filters)
+    except Exception as e:
+        render_page_error(e, page)
 
     # Institutional footer
     st.markdown("""

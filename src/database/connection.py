@@ -11,12 +11,15 @@ Provides a singleton connection with:
 
 import sqlite3
 import threading
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
 
 from src.config import get_settings
 from src.database.schema import INIT_SQL, SCHEMA_VERSION, MIGRATIONS_TABLE_SQL
+
+logger = logging.getLogger("sume.db")
 
 
 # Thread-local storage for connection
@@ -85,6 +88,8 @@ def get_connection() -> sqlite3.Connection:
                 if not _initialized:
                     _initialize_schema(_local.connection)
                     _initialized = True
+
+                logger.info("Database connection established")
 
     return _local.connection
 

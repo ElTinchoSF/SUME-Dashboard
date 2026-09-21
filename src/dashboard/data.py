@@ -18,6 +18,9 @@ import sqlite3
 
 from src.config import get_settings
 from src.database.connection import get_connection
+from src.dashboard.logging_config import get_logger
+
+logger = get_logger("data")
 
 
 def _get_data_year_range() -> tuple[Optional[int], Optional[int]]:
@@ -35,8 +38,8 @@ def _get_data_year_range() -> tuple[Optional[int], Optional[int]]:
         row = cursor.fetchone()
         if row and row[0] and row[1]:
             return int(row[0]), int(row[1])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Could not determine data year range: %s", e)
     return None, None
 
 
@@ -584,6 +587,7 @@ def load_dependencias() -> pd.DataFrame:
     Returns:
         DataFrame with columns: nombre, total_expedientes
     """
+    logger.info("Loading dependencias")
     db = get_connection()
     query = "SELECT nombre, total_expedientes FROM dependencias ORDER BY total_expedientes DESC"
     return pd.read_sql_query(query, db)
