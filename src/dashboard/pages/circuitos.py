@@ -106,7 +106,7 @@ def render_circuitos_page(filters: FilterState) -> None:
     # FRECUENCIA DE CIRCUITOS (tabla clickeable)
     # ================================================================
     st.subheader("Frecuencia de Circuitos")
-    st.caption("Hacé click en una fila para ver el diagrama de ese circuito")
+    st.caption("Seleccioná uno o más circuitos para filtrar los gráficos")
 
     display_df = circuitos_df.copy()
 
@@ -147,32 +147,43 @@ def render_circuitos_page(filters: FilterState) -> None:
         index=0,
         horizontal=True,
         key="circuitos_view_mode",
-        help="Ver solo el circuito modal o comparar todos",
+        help="Solo Modal: Sankey del circuito seleccionado (o el modal). Todos: parallel sets de los seleccionados (o todos)",
     )
 
-    # Check if a circuit was selected from the table
-    selected_circuit_json = None
+    # Check which circuits were selected from the table (multi-select)
+    selected_indices = []
     if editor_result and editor_result.selection and editor_result.selection.rows:
-        selected_idx = editor_result.selection.rows[0]
-        selected_circuit_json = circuitos_df.iloc[selected_idx]["circuito_json"]
+        selected_indices = editor_result.selection.rows
 
-    if selected_circuit_json:
-        # Show Sankey for the selected circuit
-        selected_row = circuitos_df[circuitos_df["circuito_json"] == selected_circuit_json].iloc[0]
-        frecuencia = int(selected_row["frecuencia"])
-        es_modal = bool(selected_row["es_mas_frecuente"])
-        modal_badge = " 🟢 MODAL" if es_modal else ""
-        st.subheader(f"Circuito seleccionado ({frecuencia} expedientes){modal_badge}")
-        _render_modal_view(
-            pd.DataFrame([selected_row]),
-            selected_concepto,
-            total_freq=total_freq,
-        )
-    elif view_mode == "Solo Modal":
-        modal_df = circuitos_df[circuitos_df["es_mas_frecuente"].astype(bool)]
-        _render_modal_view(modal_df, selected_concepto, total_freq=total_freq)
+    selected_df = circuitos_df.iloc[selected_indices] if selected_indices else pd.DataFrame()
+
+    if view_mode == "Solo Modal":
+        if not selected_df.empty:
+            # Show Sankey for the first selected circuit
+            first_selected = selected_df.iloc[0]
+            frecuencia = int(first_selected["frecuencia"])
+            es_modal = bool(first_selected["es_mas_frecuente"])
+            modal_badge = " 🟢 MODAL" if es_modal else ""
+            n_extra = len(selected_df) - 1
+            extra_note = f" (+{n_extra} más seleccionados)" if n_extra > 0 else ""
+            st.subheader(f"Circuito seleccionado ({frecuencia} expedientes){modal_badge}{extra_note}")
+            _render_modal_view(
+                pd.DataFrame([first_selected]),
+                selected_concepto,
+                total_freq=total_freq,
+            )
+        else:
+            # No selection: show modal circuit
+            modal_df = circuitos_df[circuitos_df["es_mas_frecuente"].astype(bool)]
+            _render_modal_view(modal_df, selected_concepto, total_freq=total_freq)
     else:
-        _render_all_circuits_view(circuitos_df, selected_concepto)
+        # "Todos los Circuitos": parallel sets
+        if not selected_df.empty:
+            # Filter to selected circuits only
+            _render_all_circuits_view(selected_df, selected_concepto)
+        else:
+            # No selection: show all circuits
+            _render_all_circuits_view(circuitos_df, selected_concepto)
 
     st.divider()
 
