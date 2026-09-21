@@ -179,10 +179,8 @@ def render_circuitos_page(filters: FilterState) -> None:
     else:
         # "Todos los Circuitos": parallel sets
         if not selected_df.empty:
-            # Filter to selected circuits only
             _render_all_circuits_view(selected_df, selected_concepto)
         else:
-            # No selection: show all circuits
             _render_all_circuits_view(circuitos_df, selected_concepto)
 
     st.divider()

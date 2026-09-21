@@ -237,17 +237,44 @@ def write_output(content: str, output_path: Path, format_type: str, context: dic
     if format_type == "markdown":
         output_path.write_text(content, encoding="utf-8")
     elif format_type == "pdf":
-        # For PDF, we'd need weasyprint - write markdown and note conversion needed
+        # Convert markdown → HTML, then HTML → PDF via weasyprint
         md_path = output_path.with_suffix(".md")
         md_path.write_text(content, encoding="utf-8")
-        logger.info(f"Markdown written to {md_path}. Convert to PDF with: weasyprint {md_path} {output_path}")
-        # Try to convert if weasyprint available
         try:
+            import markdown
+            html_body = markdown.markdown(content, extensions=["tables", "fenced_code"])
+            html_content = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page {{ margin: 1.2cm; size: A4; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 9pt; line-height: 1.0; text-align: justify; margin: 0; }}
+  h1 {{ font-size: 14pt; text-align: left; margin: 0.4rem 0; page-break-after: avoid; }}
+  h2 {{ font-size: 12pt; text-align: left; margin: 0.6rem 0 0.2rem; page-break-after: avoid; }}
+  h3 {{ font-size: 10pt; text-align: left; margin: 0.4rem 0 0.15rem; page-break-after: avoid; }}
+  h4 {{ font-size: 9pt; text-align: left; margin: 0.3rem 0 0.1rem; page-break-after: avoid; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 0.3rem 0; font-size: 7.5pt; }}
+  thead {{ display: table-header-group; }}
+  th, td {{ border: 1px solid #ccc; padding: 2px 4px; text-align: left; line-height: 1.1; }}
+  th {{ background: #f0f0f0; font-weight: bold; }}
+  blockquote {{ border-left: 2px solid #999; padding-left: 0.4rem; margin: 0.2rem 0; font-size: 8pt; color: #555; }}
+  ul, ol {{ margin: 0.15rem 0; padding-left: 1rem; }}
+  li {{ margin: 0.05rem 0; }}
+  hr {{ border: none; border-top: 1px solid #ddd; margin: 0.3rem 0; }}
+  code {{ font-size: 8pt; background: #f5f5f5; padding: 1px 3px; }}
+  strong {{ font-weight: bold; }}
+</style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
             import weasyprint
-            weasyprint.HTML(string=content).write_pdf(str(output_path))
+            weasyprint.HTML(string=html_content).write_pdf(str(output_path))
             logger.info(f"PDF generated at {output_path}")
         except ImportError:
-            logger.warning("weasyprint not installed, PDF not generated. Install with: pip install weasyprint")
+            logger.warning("weasyprint or markdown not installed, PDF not generated.")
         except Exception as e:
             logger.error(f"PDF generation failed: {e}")
     elif format_type == "excel":

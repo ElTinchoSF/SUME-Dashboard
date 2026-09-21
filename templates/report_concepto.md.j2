@@ -1,7 +1,9 @@
 # Hoja de Evidencia ISO 9001: {{ single_concepto }}
 
 **Versión:** {{ version }}
+
 **Fecha de generación:** {{ generated_at }}
+
 **Concepto:** {{ single_concepto }}
 
 ---
@@ -53,11 +55,16 @@ flowchart TD
 | # | Secuencia Completa | Frecuencia | % | Modal | Outlier | Pasos |
 |---|-------------------|------------|---|-------|---------|-------|
 {% set concept_circuits = circuitos | selectattr('concepto', 'equalto', single_concepto) | list %}
-{% for circuit in concept_circuits %}
+{% set top_circuits = concept_circuits[:10] %}
+{% for circuit in top_circuits %}
 {% set outlier_info = outliers | selectattr('circuito_json', 'equalto', circuit.circuito_json) | selectattr('concepto', 'equalto', single_concepto) | list %}
 {% set outlier_type = outlier_info[0].outlier_type if outlier_info else 'none' %}
 | {{ loop.index }} | {{ circuit.circuito_json | from_json | join(' → ') }} | {{ circuit.frecuencia | format_number }} | {{ (circuit.frecuencia / concept_summaries[single_concepto].total_expedientes * 100) | round2 }}% | {% if circuit.es_mas_frecuente %}✅{% else %}{% endif %} | {% if outlier_type != 'none' %}{{ outlier_type }}{% else %}—{% endif %} | {{ circuit.circuito_json | from_json | length }} |
 {% endfor %}
+
+{% if concept_circuits | length > 10 %}
+_Se muestran los 10 circuitos más frecuentes de {{ concept_circuits | length }} totales._
+{% endif %}
 
 ### Estadísticas de Longitud de Circuitos
 {% set concept_step_stats = step_statistics | selectattr('concepto', 'equalto', single_concepto) | list %}
@@ -102,12 +109,17 @@ _No hay circuito modal identificado_
 
 ### Expedientes con Circuitos Atípicos (Outliers)
 {% set concept_outliers = outliers | selectattr('concepto', 'equalto', single_concepto) | selectattr('outlier_type', '!=', 'none') | list %}
+{% set top_co = concept_outliers[:10] %}
 {% if concept_outliers %}
 | N° Expediente | Circuito | Tipo Outlier | Razón |
 |---------------|----------|--------------|-------|
-{% for outlier in concept_outliers %}
+{% for outlier in top_co %}
 | _Ver expedientes asociados_ | {{ outlier.circuito_json | from_json | join(' → ') }} | {{ outlier.outlier_type }} | {{ outlier.outlier_reason }} |
 {% endfor %}
+
+{% if concept_outliers | length > 10 %}
+_Se muestran los 10 outliers más frecuentes de {{ concept_outliers | length }} totales._
+{% endif %}
 {% else %}
 _No se detectaron outliers para este concepto_
 {% endif %}

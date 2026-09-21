@@ -1,7 +1,9 @@
 # Informe ISO 9001: Análisis de Circuitos Administrativos SUME - FBCB UNL
 
 **Versión:** {{ version }}
+
 **Fecha de generación:** {{ generated_at }}
+
 **Filtro de conceptos:** {% if conceptos_filter %}{{ conceptos_filter | join(', ') }}{% else %}Todos{% endif %}
 
 ---
@@ -55,13 +57,18 @@ Este informe presenta el análisis de circuitos administrativos del sistema SUME
 _No se identificó circuito modal (muestra insuficiente)_
 {% endif %}
 
-#### Todos los Circuitos Identificados
+#### Todos los Circuitos Identificados (Top 10)
 | # | Circuito | Frecuencia | % del Concepto | Modal |
 |---|----------|------------|----------------|-------|
 {% set concept_circuits = circuitos | selectattr('concepto', 'equalto', concepto) | list %}
-{% for i, circuit in enumerate(concept_circuits) %}
+{% set top_circuits = concept_circuits[:10] %}
+{% for i, circuit in enumerate(top_circuits) %}
 | {{ i + 1 }} | {{ circuit.circuito_json | from_json | join(' → ') }} | {{ circuit.frecuencia | format_number }} | {{ (circuit.frecuencia / summary.total_expedientes * 100) | round2 }}% | {% if circuit.es_mas_frecuente %}✅{% else %}{% endif %} |
 {% endfor %}
+
+{% if concept_circuits | length > 10 %}
+_Se muestran los 10 circuitos más frecuentes de {{ concept_circuits | length }} totales._
+{% endif %}
 
 ---
 {% endfor %}
@@ -112,13 +119,18 @@ Las dependencias con **mediana > 5 días** y **Q3 > 10 días** requieren atenci�
 
 ## 7. Detección de Outliers (Circuitos Atípicos)
 
+{% set active_outliers = outliers | selectattr('outlier_type', '!=', 'none') | list %}
+{% set top_outliers = active_outliers[:10] %}
+
 | Concepto | Circuito | Frecuencia | Tipo Outlier | Razón | Pasos |
 |----------|----------|------------|--------------|-------|-------|
-{% for row in outliers %}
-{% if row.outlier_type != 'none' %}
+{% for row in top_outliers %}
 | {{ row.concepto }} | {{ row.circuito_json | from_json | join(' → ') }} | {{ row.frecuencia }} | {{ row.outlier_type }} | {{ row.outlier_reason }} | {{ row.step_count }} |
-{% endif %}
 {% endfor %}
+
+{% if active_outliers | length > 10 %}
+_Se muestran los 10 outliers más frecuentes de {{ active_outliers | length }} totales._
+{% endif %}
 
 ### Clasificación de Outliers
 - **frequency:** Circuitos con frecuencia < 5% del total del concepto (casos raros)

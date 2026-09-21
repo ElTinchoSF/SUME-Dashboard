@@ -166,7 +166,9 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
         with progress_placeholder.container():
             st.info(f"Generando reporte {format_option.lower()}...")
 
-        # Run the command
+        # Run the command — inherit env so DYLD_LIBRARY_PATH reaches weasyprint
+        import os
+        env = {**os.environ, "DYLD_LIBRARY_PATH": "/opt/homebrew/lib"}
         progress_bar.progress(25)
         result = subprocess.run(
             cmd,
@@ -174,6 +176,7 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
             text=True,
             timeout=300,  # 5 minute timeout
             cwd=Path.cwd(),
+            env=env,
         )
 
         progress_bar.progress(75)
@@ -183,29 +186,44 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
             progress_placeholder.empty()
             progress_bar.empty()
 
-            st.success(f"✅ Reporte generado: {output_filename}")
+            # Check if the output file actually exists (PDF may fallback to .md)
+            actual_path = output_path
+            if not output_path.exists() and fmt == "pdf":
+                md_fallback = output_path.with_suffix(".md")
+                if md_fallback.exists():
+                    actual_path = md_fallback
+                    st.warning("⚠️ weasyprint no pudo generar el PDF. Se generó la versión Markdown.")
+                else:
+                    st.error(f"❌ No se encontró el archivo generado: {output_path}")
+                    return
+            elif not output_path.exists():
+                st.error(f"❌ No se encontró el archivo generado: {output_path}")
+                return
 
-            # Store for preview/download
-            if fmt == "markdown":
-                with open(output_path, "r", encoding="utf-8") as f:
+            st.success(f"✅ Reporte generado: {actual_path.name}")
+
+            # Store for preview — always load markdown for preview
+            md_for_preview = actual_path if actual_path.suffix == ".md" else actual_path.with_suffix(".md")
+            if md_for_preview.exists():
+                with open(md_for_preview, "r", encoding="utf-8") as f:
                     st.session_state["last_report_md"] = f.read()
-                st.session_state["last_report_path"] = str(output_path)
+                st.session_state["last_report_path"] = str(md_for_preview)
                 st.session_state["last_report_format"] = "markdown"
 
             # Download button
-            with open(output_path, "rb") as f:
+            with open(actual_path, "rb") as f:
                 file_data = f.read()
 
             st.download_button(
-                label=f"⬇️ Descargar {output_filename}",
+                label=f"⬇️ Descargar {actual_path.name}",
                 data=file_data,
-                file_name=output_filename,
-                mime=_get_mime_type(fmt),
+                file_name=actual_path.name,
+                mime=_get_mime_type(fmt if actual_path.suffix != ".md" else "markdown"),
                 width="stretch",
             )
 
             # Also show the output path
-            st.caption(f"Guardado en: {output_path}")
+            st.caption(f"Guardado en: {actual_path}")
 
         else:
             progress_placeholder.empty()
