@@ -11,6 +11,7 @@ Report generation UI with:
 
 import streamlit as st
 import subprocess
+import sys
 import tempfile
 import os
 from pathlib import Path
@@ -145,7 +146,7 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
 
     # Build CLI command
     cmd = [
-        "python", "-m", "src.analysis.reports",
+        sys.executable, "-m", "src.analysis.reports",
         "--output", str(output_path),
         "--format", fmt,
     ]
