@@ -84,6 +84,11 @@ Ejemplos de uso:
         help="Número máximo de páginas a procesar (para testing)",
     )
     parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="No fetch detail pages de expedientes ya existentes en la DB (mucho más rápido)",
+    )
+    parser.add_argument(
         "--db-path",
         default="data/sume.db",
         help="Ruta a la base de datos (default: data/sume.db)",
@@ -129,7 +134,7 @@ Ejemplos de uso:
             print("✓ Base de datos limpiada")
 
         # Crear y ejecutar scraper
-        scraper = SUMEScraper(config)
+        scraper = SUMEScraper(config, skip_existing=args.skip_existing)
 
         # Si hay max_pages, limitar el scraping
         if args.max_pages:

@@ -106,17 +106,20 @@ class SUMEScraper:
     - Reutilizable para diferentes facultades
     """
 
-    def __init__(self, config: ScraperConfig):
+    def __init__(self, config: ScraperConfig, skip_existing: bool = False):
         """
         Inicializar el scraper.
 
         Args:
             config: Configuración del scraper
+            skip_existing: Si es True, no fetch detail pages de expedientes ya existentes
         """
         self.config = config
         self.client = SUMEClient(config)
         self.normalizer_rules = get_normalizer()
         self.stats = ScrapingStats()
+        self.skip_existing = skip_existing
+        self._existing_cache: set[str] | None = None
 
     def run(self) -> ScrapingResult:
         """
@@ -210,6 +213,19 @@ class SUMEScraper:
 
         return result.content
 
+    def _load_existing_cache(self) -> set[str]:
+        """Load all existing expediente numbers from DB into a set for O(1) lookups."""
+        if self._existing_cache is not None:
+            return self._existing_cache
+
+        from src.database import get_connection
+
+        conn = get_connection()
+        rows = conn.execute("SELECT numero FROM expedientes").fetchall()
+        self._existing_cache = {row[0] for row in rows}
+        logger.info(f"Caché de existentes cargado: {len(self._existing_cache)} expedientes")
+        return self._existing_cache
+
     def _process_listing_expedientes(
         self, expedientes: list[ExpedienteDict], page_num: int
     ) -> None:
@@ -225,7 +241,14 @@ class SUMEScraper:
             expedientes: Lista de ExpedienteDict del listado
             page_num: Número de página actual
         """
+        existing = self._load_existing_cache() if self.skip_existing else set()
+
         for i, expediente in enumerate(expedientes, 1):
+            # Skip if already exists and --skip-existing is set
+            if self.skip_existing and expediente.numero in existing:
+                self.stats.expedientes_skipped += 1
+                continue
+
             logger.debug(
                 f"Procesando {expediente.numero} ({i}/{len(expedientes)} en página {page_num})"
             )
