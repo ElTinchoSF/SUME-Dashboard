@@ -5,33 +5,34 @@ Displays KPI cards, expedientes by concepto bar chart,
 monthly trend line chart, and top 10 dependencias by traffic.
 """
 
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
+import streamlit as st
 
-from src.dashboard.data import (
-    load_expedientes,
-    load_dependency_traffic,
-    load_concept_distribution,
-    load_monthly_trend,
-    FilterState,
-)
 from src.dashboard.components.charts import (
-    render_kpi_row,
     bar_chart_horizontal,
-    line_chart_monthly,
-    dependency_traffic_bar,
     concept_distribution_pie,
-    apply_default_layout,
-    COLORS,
+    dependency_traffic_bar,
+    line_chart_monthly,
+    render_kpi_row,
 )
 from src.dashboard.components.filters import render_filter_summary
+from src.dashboard.data import (
+    FilterState,
+    load_concept_distribution,
+    load_dependency_traffic,
+    load_expedientes,
+    load_monthly_trend,
+)
 
 
 def render_overview_page(filters: FilterState) -> None:
     """Render the Overview page with KPIs and distribution charts."""
     # Page header
     st.header("📈 Vista General")
+    st.caption(
+        "Resumen ejecutivo: indicadores clave, distribución por concepto, tendencia mensual y tráfico de dependencias."
+    )
     render_filter_summary(filters)
 
     # Load data with filters
@@ -59,27 +60,51 @@ def render_overview_page(filters: FilterState) -> None:
 
     # Row 1: Primary KPIs
     kpis_row1 = [
-        {"label": "Expedientes Iniciados", "value": f"{total_iniciados:,}",
-         "help": "Total de expedientes creados en el período"},
-        {"label": "Total Movimientos", "value": f"{total_movimientos:,}",
-         "help": "Total de pasos/movimientos registrados"},
-        {"label": "Tiempo Medio de Ciclo", "value": f"{tiempo_medio:.1f} días",
-         "help": "Promedio de días hábiles entre alta y última gestión"},
-        {"label": "Etapas Promedio", "value": f"{etapas_promedio:.1f}",
-         "help": "Promedio de pasos por expediente (promedio de promedios por concepto)"},
+        {
+            "label": "Expedientes Iniciados",
+            "value": f"{total_iniciados:,}",
+            "help": "Total de expedientes creados en el período",
+        },
+        {
+            "label": "Total Movimientos",
+            "value": f"{total_movimientos:,}",
+            "help": "Total de pasos/movimientos registrados",
+        },
+        {
+            "label": "Tiempo Medio de Ciclo",
+            "value": f"{tiempo_medio:.1f} días",
+            "help": "Promedio de días hábiles entre alta y última gestión",
+        },
+        {
+            "label": "Etapas Promedio",
+            "value": f"{etapas_promedio:.1f}",
+            "help": "Promedio de pasos por expediente (promedio de promedios por concepto)",
+        },
     ]
     render_kpi_row(kpis_row1)
 
     # Row 2: Archiving & Asunto KPIs
     kpis_row2 = [
-        {"label": "Archivados", "value": f"{archivados:,}",
-         "help": "Expedientes cuya última dependencia es Archivo Digital"},
-        {"label": "Tasa de Finalización", "value": f"{tasa_finalizacion:.1f}%",
-         "help": "Porcentaje de expedientes archivados sobre los iniciados"},
-        {"label": "Asunto más Frecuente", "value": top1["label"],
-         "help": f"{top1['count']:,} expedientes ({top1['pct']:.1f}%)"},
-        {"label": "2° Asunto más Frecuente", "value": top2["label"],
-         "help": f"{top2['count']:,} expedientes ({top2['pct']:.1f}%)"},
+        {
+            "label": "Archivados",
+            "value": f"{archivados:,}",
+            "help": "Expedientes cuya última dependencia es Archivo Digital",
+        },
+        {
+            "label": "Tasa de Finalización",
+            "value": f"{tasa_finalizacion:.1f}%",
+            "help": "Porcentaje de expedientes archivados sobre los iniciados",
+        },
+        {
+            "label": "Asunto más Frecuente",
+            "value": top1["label"],
+            "help": f"{top1['count']:,} expedientes ({top1['pct']:.1f}%)",
+        },
+        {
+            "label": "2° Asunto más Frecuente",
+            "value": top2["label"],
+            "help": f"{top2['count']:,} expedientes ({top2['pct']:.1f}%)",
+        },
     ]
     render_kpi_row(kpis_row2)
 
@@ -163,6 +188,7 @@ def render_overview_page(filters: FilterState) -> None:
         )
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_total_movimientos(filters: FilterState) -> int:
     """Get total movimientos count for filtered expedientes."""
     from src.database.connection import get_connection
@@ -182,6 +208,7 @@ def _get_total_movimientos(filters: FilterState) -> int:
     return result[0] if result else 0
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_archivados_count(filters: FilterState) -> int:
     """
     Count expedientes whose last movement is to 'Archivo Digital'.
@@ -205,7 +232,7 @@ def _get_archivados_count(filters: FilterState) -> int:
                 GROUP BY expediente_id
             ) lm ON m.expediente_id = lm.expediente_id AND m.orden = lm.max_orden
             WHERE m.dependencia LIKE '%Archivo Digital%'
-            {where_clause.replace('WHERE', 'AND', 1) if where_clause else ''}
+            {where_clause.replace("WHERE", "AND", 1) if where_clause else ""}
         )
     """
 
@@ -214,6 +241,7 @@ def _get_archivados_count(filters: FilterState) -> int:
     return result[0] if result else 0
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_tiempo_medio_ciclo(filters: FilterState) -> float:
     """
     Average business days (weekdays) between fecha_alta and last movement.
@@ -231,7 +259,7 @@ def _get_tiempo_medio_ciclo(filters: FilterState) -> float:
         FROM expedientes e
         JOIN movimientos m ON e.id = m.expediente_id
         WHERE e.fecha_alta IS NOT NULL AND m.fecha_recepcion IS NOT NULL
-        {('AND ' + where_clause.replace('WHERE ', '', 1)) if where_clause else ''}
+        {("AND " + where_clause.replace("WHERE ", "", 1)) if where_clause else ""}
         GROUP BY e.id
     """
 
@@ -258,6 +286,7 @@ def _get_tiempo_medio_ciclo(filters: FilterState) -> float:
     return float(np.mean(business_days_list)) if business_days_list else 0.0
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_etapas_promedio(filters: FilterState) -> float:
     """
     Average steps per expediente using promedio de promedios by concepto.
@@ -286,6 +315,7 @@ def _get_etapas_promedio(filters: FilterState) -> float:
     return float(result[0]) if result and result[0] else 0.0
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_top_asunto(filters: FilterState, n: int = 1) -> dict:
     """
     Get the N-th most frequent asunto with count and percentage.

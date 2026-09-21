@@ -18,22 +18,37 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Project
+# Git
+.git/
+.gitignore
+
+# Project (data and reports are mounted as volumes)
 data/raw/
 data/processed/
 *.db
 *.sqlite
 reports/
+logs/
+
+# Testing
 .pytest_cache/
 htmlcov/
 .coverage
 coverage.xml
+tests/
 
-# Streamlit
+# Docs
+Docs/
+openspec/
+
+# Dev tools
+.atl/
+scripts/
+
+# Streamlit local config (use container defaults)
 .streamlit/
 
-# Node (for Playwright tests)
+# Node
 node_modules/
 test-results/
 playwright-report/
-logs/

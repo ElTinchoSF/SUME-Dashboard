@@ -6,26 +6,25 @@ scraper → DB → analyzer → dashboard data flow.
 Verifies row count reconciliation and referential integrity.
 """
 
-import json
 import sqlite3
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pandas as pd
 import pytest
 
 from src.analysis.circuits import run_full_circuit_analysis
+from src.analysis.reports import generate_main_report, load_report_data
 from src.analysis.statistics import run_full_statistics_analysis
-from src.analysis.reports import load_report_data, generate_main_report
-from src.database.connection import get_connection, close_connection, set_connection_factory
+from src.config import DatabaseConfig, Settings
+from src.database.connection import close_connection, set_connection_factory
 from src.database.schema import INIT_SQL
-from src.config import Settings, DatabaseConfig
-
 
 # ============================================================================
 # Test Database Setup
 # ============================================================================
+
 
 @pytest.fixture
 def integration_db() -> Generator[sqlite3.Connection, None, None]:
@@ -51,6 +50,7 @@ def integration_db() -> Generator[sqlite3.Connection, None, None]:
     # Generate 100 synthetic expedientes
     # Conceptos: "Gestión Alumno" (40), "Gestión de Becas" (30), "Trámites Docentes" (20), "Administración General" (10)
     import random
+
     random.seed(42)  # Deterministic test data
 
     conceptos_distribution = [
@@ -97,26 +97,117 @@ def integration_db() -> Generator[sqlite3.Connection, None, None]:
     # Circuit patterns per concepto (with frequencies)
     circuits_by_concepto = {
         "Gestión Alumno": [
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica"], 20),  # Modal
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Dirección de Carreras", "Secretaría Académica"], 10),
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica", "Consejo Directivo"], 5),
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica", "Dirección de Carreras", "Consejo Directivo"], 3),  # Structural outlier
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica", "Departamento Alumnos"], 2),  # Loop outlier
+            (
+                ["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica"],
+                20,
+            ),  # Modal
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Dirección de Carreras",
+                    "Secretaría Académica",
+                ],
+                10,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Secretaría Académica",
+                    "Consejo Directivo",
+                ],
+                5,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Secretaría Académica",
+                    "Dirección de Carreras",
+                    "Consejo Directivo",
+                ],
+                3,
+            ),  # Structural outlier
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Secretaría Académica",
+                    "Departamento Alumnos",
+                ],
+                2,
+            ),  # Loop outlier
         ],
         "Gestión de Becas": [
             (["Mesa de Entradas - FBCB", "Departamento Becas", "Comité Evaluador"], 15),  # Modal
-            (["Mesa de Entradas - FBCB", "Departamento Becas", "Secretaría de Bienestar", "Comité Evaluador"], 8),
-            (["Mesa de Entradas - FBCB", "Departamento Becas", "Tesorería", "Secretaría de Bienestar", "Comité Evaluador"], 4),
-            (["Mesa de Entradas - FBCB", "Departamento Becas", "Comité Evaluador", "Departamento Becas"], 3),  # Loop outlier
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Becas",
+                    "Secretaría de Bienestar",
+                    "Comité Evaluador",
+                ],
+                8,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Becas",
+                    "Tesorería",
+                    "Secretaría de Bienestar",
+                    "Comité Evaluador",
+                ],
+                4,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Becas",
+                    "Comité Evaluador",
+                    "Departamento Becas",
+                ],
+                3,
+            ),  # Loop outlier
         ],
         "Trámites Docentes": [
-            (["Mesa de Entradas - FBCB", "Departamento Docentes", "Secretaría Académica"], 12),  # Modal
-            (["Mesa de Entradas - FBCB", "Departamento Docentes", "Dirección de Carreras", "Secretaría Académica"], 5),
-            (["Mesa de Entradas - FBCB", "Departamento Docentes", "Secretaría Académica", "Consejo Directivo"], 3),
+            (
+                ["Mesa de Entradas - FBCB", "Departamento Docentes", "Secretaría Académica"],
+                12,
+            ),  # Modal
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Docentes",
+                    "Dirección de Carreras",
+                    "Secretaría Académica",
+                ],
+                5,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Docentes",
+                    "Secretaría Académica",
+                    "Consejo Directivo",
+                ],
+                3,
+            ),
         ],
         "Administración General": [
-            (["Mesa de Entradas - FBCB", "Secretaría Administrativa", "Dirección General"], 6),  # Modal
-            (["Mesa de Entradas - FBCB", "Secretaría Administrativa", "Asesoría Legal", "Dirección General"], 4),
+            (
+                ["Mesa de Entradas - FBCB", "Secretaría Administrativa", "Dirección General"],
+                6,
+            ),  # Modal
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Secretaría Administrativa",
+                    "Asesoría Legal",
+                    "Dirección General",
+                ],
+                4,
+            ),
         ],
     }
 
@@ -182,6 +273,7 @@ def integration_db() -> Generator[sqlite3.Connection, None, None]:
 
     # Override settings to use this test database
     import src.config
+
     original_get_settings = src.config.get_settings
 
     def test_get_settings():
@@ -209,6 +301,7 @@ def integration_db() -> Generator[sqlite3.Connection, None, None]:
 
     # Invalidate Streamlit cache to ensure clean state for dashboard tests
     import streamlit as st
+
     st.cache_data.clear()
 
     try:
@@ -224,6 +317,7 @@ def integration_db() -> Generator[sqlite3.Connection, None, None]:
 # ============================================================================
 # Integration Tests
 # ============================================================================
+
 
 class TestFullPipelineIntegration:
     """Integration tests for the complete data pipeline."""
@@ -246,7 +340,9 @@ class TestFullPipelineIntegration:
         # Administración General: 3*6 + 4*4 = 18+16 = 34
         # Total: 143 + 109 + 68 + 34 = 354
         expected_movimientos = 354
-        assert mov_count == expected_movimientos, f"Expected {expected_movimientos} movimientos, got {mov_count}"
+        assert mov_count == expected_movimientos, (
+            f"Expected {expected_movimientos} movimientos, got {mov_count}"
+        )
 
     def test_concepto_distribution(self, integration_db):
         """Verify expediente distribution across conceptos."""
@@ -263,7 +359,9 @@ class TestFullPipelineIntegration:
         }
 
         for row in rows:
-            assert row["cnt"] == expected[row["concepto"]], f"Concepto {row['concepto']}: expected {expected[row['concepto']]}, got {row['cnt']}"
+            assert row["cnt"] == expected[row["concepto"]], (
+                f"Concepto {row['concepto']}: expected {expected[row['concepto']]}, got {row['cnt']}"
+            )
 
     def test_circuit_analysis_runs(self, integration_db):
         """Test that full circuit analysis runs without errors."""
@@ -431,7 +529,9 @@ class TestRowCountReconciliation:
         cursor = integration_db.execute("SELECT COUNT(*) FROM movimientos")
         total_movs = cursor.fetchone()[0]
 
-        assert sum_per_exp == total_movs, f"Sum per expediente ({sum_per_exp}) != total movimientos ({total_movs})"
+        assert sum_per_exp == total_movs, (
+            f"Sum per expediente ({sum_per_exp}) != total movimientos ({total_movs})"
+        )
 
     def test_dependencias_reconciliation(self, integration_db):
         """
@@ -443,8 +543,9 @@ class TestRowCountReconciliation:
         cursor = integration_db.execute("SELECT COUNT(*) FROM dependencias")
         dep_table_count = cursor.fetchone()[0]
 
-        assert distinct_movs_deps == dep_table_count, \
+        assert distinct_movs_deps == dep_table_count, (
             f"Distinct dependencias in movimientos ({distinct_movs_deps}) != dependencias table ({dep_table_count})"
+        )
 
     def test_circuit_frequency_reconciliation(self, integration_db):
         """
@@ -452,7 +553,7 @@ class TestRowCountReconciliation:
         """
         run_full_circuit_analysis(integration_db)
 
-# Get expedientes per concepto
+        # Get expedientes per concepto
         cursor = integration_db.execute(
             "SELECT concepto, COUNT(*) as exp_count FROM expedientes GROUP BY concepto"
         )
@@ -466,8 +567,9 @@ class TestRowCountReconciliation:
 
         for concepto, exp_count in exp_per_concepto.items():
             circuit_sum = circuit_per_concepto.get(concepto, 0)
-            assert circuit_sum == exp_count, \
+            assert circuit_sum == exp_count, (
                 f"Concepto '{concepto}': circuit frequency sum ({circuit_sum}) != expedientes count ({exp_count})"
+            )
 
 
 class TestReferentialIntegrity:
@@ -482,7 +584,9 @@ class TestReferentialIntegrity:
             WHERE e.id IS NULL
         """)
         orphan_count = cursor.fetchone()["orphan_count"]
-        assert orphan_count == 0, f"Found {orphan_count} orphaned movimientos (expediente_id not in expedientes)"
+        assert orphan_count == 0, (
+            f"Found {orphan_count} orphaned movimientos (expediente_id not in expedientes)"
+        )
 
     def test_movimientos_dependencia_fk(self, integration_db):
         """Verify: All movimientos.dependencia exist in dependencias.nombre."""
@@ -493,7 +597,9 @@ class TestReferentialIntegrity:
             WHERE d.nombre IS NULL
         """)
         orphan_count = cursor.fetchone()["orphan_count"]
-        assert orphan_count == 0, f"Found {orphan_count} movimientos with dependencia not in dependencias table"
+        assert orphan_count == 0, (
+            f"Found {orphan_count} movimientos with dependencia not in dependencias table"
+        )
 
     def test_circuitos_concepto_fk(self, integration_db):
         """Verify: All circuitos.concepto exist in expedientes.concepto."""
@@ -516,7 +622,7 @@ class TestDashboardDataFlow:
 
     def test_dashboard_load_expedientes(self, integration_db):
         """Test dashboard load_expedientes function."""
-        from src.dashboard.data import load_expedientes, FilterState
+        from src.dashboard.data import FilterState, load_expedientes
 
         run_full_circuit_analysis(integration_db)
         run_full_statistics_analysis(integration_db)
@@ -570,7 +676,7 @@ class TestDashboardDataFlow:
 
     def test_dashboard_load_dependency_traffic(self, integration_db):
         """Test dashboard load_dependency_traffic function."""
-        from src.dashboard.data import load_dependency_traffic, FilterState
+        from src.dashboard.data import FilterState, load_dependency_traffic
 
         run_full_circuit_analysis(integration_db)
         run_full_statistics_analysis(integration_db)
@@ -582,7 +688,7 @@ class TestDashboardDataFlow:
 
     def test_dashboard_load_concept_distribution(self, integration_db):
         """Test dashboard load_concept_distribution function."""
-        from src.dashboard.data import load_concept_distribution, FilterState
+        from src.dashboard.data import FilterState, load_concept_distribution
 
         run_full_circuit_analysis(integration_db)
         run_full_statistics_analysis(integration_db)
@@ -593,7 +699,7 @@ class TestDashboardDataFlow:
 
     def test_dashboard_load_monthly_trend(self, integration_db):
         """Test dashboard load_monthly_trend function."""
-        from src.dashboard.data import load_monthly_trend, FilterState
+        from src.dashboard.data import FilterState, load_monthly_trend
 
         run_full_circuit_analysis(integration_db)
         run_full_statistics_analysis(integration_db)
@@ -631,7 +737,9 @@ class TestIncrementalExecution:
 
         # Results should be identical
         for key in stats1:
-            pd.testing.assert_frame_equal(stats1[key].sort_index(axis=1), stats2[key].sort_index(axis=1))
+            pd.testing.assert_frame_equal(
+                stats1[key].sort_index(axis=1), stats2[key].sort_index(axis=1)
+            )
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import logging
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime
@@ -16,13 +17,9 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import sqlite3
-
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.analysis.circuits import (
-    compute_circuit_frequencies,
-    identify_modal_circuits,
     run_full_circuit_analysis,
 )
 from src.analysis.statistics import run_full_statistics_analysis
@@ -68,7 +65,9 @@ def compute_data_hash(db: sqlite3.Connection) -> str:
 
     # Also hash circuitos content for data sensitivity
     try:
-        cursor = db.execute("SELECT circuito, concepto, frecuencia, es_mas_frecuente FROM circuitos ORDER BY id")
+        cursor = db.execute(
+            "SELECT circuito, concepto, frecuencia, es_mas_frecuente FROM circuitos ORDER BY id"
+        )
         for row in cursor:
             hasher.update(json.dumps(row, sort_keys=True, default=str).encode())
     except sqlite3.OperationalError:
@@ -123,7 +122,9 @@ def setup_jinja_env(templates_dir: str | Path) -> Environment:
     return env
 
 
-def load_report_data(db: sqlite3.Connection | None = None, conceptos_filter: list[str] | None = None) -> dict[str, Any]:
+def load_report_data(
+    db: sqlite3.Connection | None = None, conceptos_filter: list[str] | None = None
+) -> dict[str, Any]:
     """
     Load all data needed for report generation.
 
@@ -192,7 +193,11 @@ def load_report_data(db: sqlite3.Connection | None = None, conceptos_filter: lis
             modal_circuits[row["concepto"]] = {
                 "circuito": json.loads(row["circuito_json"]),
                 "frecuencia": int(row["frecuencia"]),
-                "total_concepto": int(circuit_analysis[circuit_analysis["concepto"] == row["concepto"]]["frecuencia"].sum()),
+                "total_concepto": int(
+                    circuit_analysis[circuit_analysis["concepto"] == row["concepto"]][
+                        "frecuencia"
+                    ].sum()
+                ),
             }
 
     # Prepare concept summaries
@@ -214,11 +219,21 @@ def load_report_data(db: sqlite3.Connection | None = None, conceptos_filter: lis
         "conceptos_filter": conceptos_filter,
         "concept_summaries": concept_summaries,
         "circuitos": circuit_analysis.to_dict("records") if not circuit_analysis.empty else [],
-        "step_statistics": stats_analysis["step_statistics"].to_dict("records") if not stats_analysis["step_statistics"].empty else [],
-        "permanence_by_dependencia": stats_analysis["permanence_by_dependencia"].to_dict("records") if not stats_analysis["permanence_by_dependencia"].empty else [],
-        "outliers": stats_analysis["outliers"].to_dict("records") if not stats_analysis["outliers"].empty else [],
-        "dependency_traffic": stats_analysis["dependency_traffic"].to_dict("records") if not stats_analysis["dependency_traffic"].empty else [],
-        "concept_distribution": stats_analysis["concept_distribution"].to_dict("records") if not stats_analysis["concept_distribution"].empty else [],
+        "step_statistics": stats_analysis["step_statistics"].to_dict("records")
+        if not stats_analysis["step_statistics"].empty
+        else [],
+        "permanence_by_dependencia": stats_analysis["permanence_by_dependencia"].to_dict("records")
+        if not stats_analysis["permanence_by_dependencia"].empty
+        else [],
+        "outliers": stats_analysis["outliers"].to_dict("records")
+        if not stats_analysis["outliers"].empty
+        else [],
+        "dependency_traffic": stats_analysis["dependency_traffic"].to_dict("records")
+        if not stats_analysis["dependency_traffic"].empty
+        else [],
+        "concept_distribution": stats_analysis["concept_distribution"].to_dict("records")
+        if not stats_analysis["concept_distribution"].empty
+        else [],
         "movimientos": movimientos_df.to_dict("records") if not movimientos_df.empty else [],
         "modal_circuits": modal_circuits,
     }
@@ -230,7 +245,9 @@ def render_template(env: Environment, template_name: str, context: dict[str, Any
     return template.render(**context)
 
 
-def write_output(content: str, output_path: Path, format_type: str, context: dict[str, Any] | None = None) -> None:
+def write_output(
+    content: str, output_path: Path, format_type: str, context: dict[str, Any] | None = None
+) -> None:
     """Write rendered content to file in the specified format."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -242,6 +259,7 @@ def write_output(content: str, output_path: Path, format_type: str, context: dic
         md_path.write_text(content, encoding="utf-8")
         try:
             import markdown
+
             html_body = markdown.markdown(content, extensions=["tables", "fenced_code"])
             html_content = f"""<!DOCTYPE html>
 <html lang="es">
@@ -271,6 +289,7 @@ def write_output(content: str, output_path: Path, format_type: str, context: dic
 </body>
 </html>"""
             import weasyprint
+
             weasyprint.HTML(string=html_content).write_pdf(str(output_path))
             logger.info(f"PDF generated at {output_path}")
         except ImportError:
@@ -407,43 +426,38 @@ Examples:
     )
 
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         required=True,
-        help="Output file path (for single report) or directory (for multi-concepto)"
+        help="Output file path (for single report) or directory (for multi-concepto)",
     )
     parser.add_argument(
-        "--format", "-f",
+        "--format",
+        "-f",
         choices=["markdown", "pdf", "excel"],
         default="markdown",
-        help="Output format (default: markdown)"
+        help="Output format (default: markdown)",
     )
     parser.add_argument(
-        "--conceptos", "-c",
-        help="Comma-separated list of conceptos to include in main report"
+        "--conceptos", "-c", help="Comma-separated list of conceptos to include in main report"
     )
     parser.add_argument(
         "--concepto",
-        help="Single concepto for evidence sheet report (generates report_concepto template)"
+        help="Single concepto for evidence sheet report (generates report_concepto template)",
     )
     parser.add_argument(
         "--version-auto",
         action="store_true",
-        help="Auto-generate version from date, git commit, and data hash"
+        help="Auto-generate version from date, git commit, and data hash",
     )
     parser.add_argument(
-        "--templates-dir", "-t",
+        "--templates-dir",
+        "-t",
         default="templates",
-        help="Directory containing Jinja2 templates (default: templates)"
+        help="Directory containing Jinja2 templates (default: templates)",
     )
-    parser.add_argument(
-        "--db-path",
-        help="Path to SQLite database (overrides config.yaml)"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--db-path", help="Path to SQLite database (overrides config.yaml)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
@@ -457,8 +471,10 @@ Examples:
     # Override DB path if provided
     if args.db_path:
         import os
+
         os.environ["SUME_DB_PATH"] = args.db_path
         from src.config import reload_settings
+
         reload_settings()
 
     db = get_connection()
@@ -471,7 +487,10 @@ Examples:
             if output_path.suffix == "":
                 # Directory provided, create file inside
                 safe_name = args.concepto.replace(" ", "_").replace("/", "_")
-                output_path = output_path / f"reporte_{safe_name}.{args.format if args.format != 'excel' else 'xlsx'}"
+                output_path = (
+                    output_path
+                    / f"reporte_{safe_name}.{args.format if args.format != 'excel' else 'xlsx'}"
+                )
 
             generate_concepto_report(
                 concepto=args.concepto,

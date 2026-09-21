@@ -5,8 +5,8 @@ These provide type-safe access to database rows when using sqlite3.Row
 or when converting to/from pandas DataFrames.
 """
 
-from typing import TypedDict, NotRequired
 from datetime import date, datetime
+from typing import NotRequired, TypedDict
 
 
 class ExpedienteDict(TypedDict):
@@ -92,4 +92,6 @@ class CircuitoInputDict(TypedDict):
 
 # Type aliases for common query results
 ExpedienteWithMovimientos = tuple[ExpedienteDict, list[MovimientoDict]]
-CircuitFrequencyRow = tuple[str, str, int, bool]  # circuito_json, concepto, frecuencia, es_mas_frecuente
+CircuitFrequencyRow = tuple[
+    str, str, int, bool
+]  # circuito_json, concepto, frecuencia, es_mas_frecuente

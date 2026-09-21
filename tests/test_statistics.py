@@ -14,15 +14,14 @@ import pandas as pd
 import pytest
 
 from src.analysis.statistics import (
-    compute_step_statistics,
-    compute_permanence_times,
-    compute_permanence_stats_by_dependencia,
-    detect_outliers,
-    compute_dependency_traffic,
     compute_concept_distribution,
+    compute_dependency_traffic,
+    compute_permanence_stats_by_dependencia,
+    compute_permanence_times,
+    compute_step_statistics,
+    detect_outliers,
     run_full_statistics_analysis,
 )
-from src.database.connection import get_connection
 from src.database.schema import init_db
 
 
@@ -114,9 +113,35 @@ def temp_db():
 
     # Circuitos (pre-computed for testing)
     circuitos = [
-        (json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2", "Dependencia 3"]), "Concepto A", 2, 1),
-        (json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 4", "Dependencia 5", "Dependencia 6", "Dependencia 7"]), "Concepto A", 1, 0),
-        (json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2"]), "Concepto B", 2, 1),
+        (
+            json.dumps(
+                ["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2", "Dependencia 3"]
+            ),
+            "Concepto A",
+            2,
+            1,
+        ),
+        (
+            json.dumps(
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Dependencia 1",
+                    "Dependencia 4",
+                    "Dependencia 5",
+                    "Dependencia 6",
+                    "Dependencia 7",
+                ]
+            ),
+            "Concepto A",
+            1,
+            0,
+        ),
+        (
+            json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2"]),
+            "Concepto B",
+            2,
+            1,
+        ),
     ]
     for circ, conc, freq, modal in circuitos:
         conn.execute(
@@ -133,7 +158,9 @@ def temp_db():
 @pytest.fixture
 def freq_df(temp_db):
     """Load circuit frequencies from test DB."""
-    return pd.read_sql_query("SELECT circuito, concepto, frecuencia, es_mas_frecuente FROM circuitos", temp_db)
+    return pd.read_sql_query(
+        "SELECT circuito, concepto, frecuencia, es_mas_frecuente FROM circuitos", temp_db
+    )
 
 
 class TestStepStatistics:
@@ -144,9 +171,15 @@ class TestStepStatistics:
 
         assert not result.empty
         assert list(result.columns) == [
-            "concepto", "min_steps", "max_steps", "mean_steps",
-            "median_steps", "mode_steps", "std_steps",
-            "total_circuitos", "total_expedientes"
+            "concepto",
+            "min_steps",
+            "max_steps",
+            "mean_steps",
+            "median_steps",
+            "mode_steps",
+            "std_steps",
+            "total_circuitos",
+            "total_expedientes",
         ]
 
         # Concepto A: circuits with 4 steps (freq 2) and 6 steps (freq 1)
@@ -185,8 +218,14 @@ class TestPermanenceTimes:
 
         assert not result.empty
         assert list(result.columns) == [
-            "expediente_id", "numero", "concepto", "orden", "dependencia",
-            "fecha_recepcion", "permanence_days", "is_final_step"
+            "expediente_id",
+            "numero",
+            "concepto",
+            "orden",
+            "dependencia",
+            "fecha_recepcion",
+            "permanence_days",
+            "is_final_step",
         ]
 
         # Check EXP-001: 4 movements, 3 permanence intervals
@@ -244,15 +283,39 @@ class TestOutlierDetection:
     def test_detect_structural_step_outlier(self, temp_db):
         # Create data with clear structural outlier
         # Modal: 3 steps, Outlier: 10 steps (10 > 3*2.5=7.5)
-        freq_df = pd.DataFrame([
-            {"circuito": json.dumps(["MDE", "D1", "D2", "D3"]), "concepto": "Test", "frecuencia": 10, "es_mas_frecuente": True},
-            {"circuito": json.dumps(["MDE", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"]), "concepto": "Test", "frecuencia": 1, "es_mas_frecuente": False},
-        ])
-        step_stats = pd.DataFrame([{
-            "concepto": "Test", "min_steps": 4, "max_steps": 11, "mean_steps": 4.6,
-            "median_steps": 4, "mode_steps": 4, "std_steps": 2.0,
-            "total_circuitos": 2, "total_expedientes": 11
-        }])
+        freq_df = pd.DataFrame(
+            [
+                {
+                    "circuito": json.dumps(["MDE", "D1", "D2", "D3"]),
+                    "concepto": "Test",
+                    "frecuencia": 10,
+                    "es_mas_frecuente": True,
+                },
+                {
+                    "circuito": json.dumps(
+                        ["MDE", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"]
+                    ),
+                    "concepto": "Test",
+                    "frecuencia": 1,
+                    "es_mas_frecuente": False,
+                },
+            ]
+        )
+        step_stats = pd.DataFrame(
+            [
+                {
+                    "concepto": "Test",
+                    "min_steps": 4,
+                    "max_steps": 11,
+                    "mean_steps": 4.6,
+                    "median_steps": 4,
+                    "mode_steps": 4,
+                    "std_steps": 2.0,
+                    "total_circuitos": 2,
+                    "total_expedientes": 11,
+                }
+            ]
+        )
         perm_df = pd.DataFrame()  # Empty
 
         result = detect_outliers(freq_df, step_stats, perm_df, temp_db)
@@ -262,14 +325,31 @@ class TestOutlierDetection:
 
     def test_detect_loop_outlier(self, temp_db):
         # Circuit with repeated dependency
-        freq_df = pd.DataFrame([
-            {"circuito": json.dumps(["MDE", "D1", "D2", "D1", "D3"]), "concepto": "Test", "frecuencia": 2, "es_mas_frecuente": False},
-        ])
-        step_stats = pd.DataFrame([{
-            "concepto": "Test", "min_steps": 5, "max_steps": 5, "mean_steps": 5,
-            "median_steps": 5, "mode_steps": 5, "std_steps": 0,
-            "total_circuitos": 1, "total_expedientes": 2
-        }])
+        freq_df = pd.DataFrame(
+            [
+                {
+                    "circuito": json.dumps(["MDE", "D1", "D2", "D1", "D3"]),
+                    "concepto": "Test",
+                    "frecuencia": 2,
+                    "es_mas_frecuente": False,
+                },
+            ]
+        )
+        step_stats = pd.DataFrame(
+            [
+                {
+                    "concepto": "Test",
+                    "min_steps": 5,
+                    "max_steps": 5,
+                    "mean_steps": 5,
+                    "median_steps": 5,
+                    "mode_steps": 5,
+                    "std_steps": 0,
+                    "total_circuitos": 1,
+                    "total_expedientes": 2,
+                }
+            ]
+        )
         perm_df = pd.DataFrame()
 
         result = detect_outliers(freq_df, step_stats, perm_df, temp_db)
@@ -285,8 +365,11 @@ class TestDependencyTraffic:
 
         assert not result.empty
         assert list(result.columns) == [
-            "dependencia", "total_expedientes", "total_movimientos",
-            "pct_expedientes", "pct_movimientos"
+            "dependencia",
+            "total_expedientes",
+            "total_movimientos",
+            "pct_expedientes",
+            "pct_movimientos",
         ]
 
         # Mesa de Entradas: 5 expedientes, 5 movimientos (one per expediente)

@@ -5,13 +5,18 @@ Provides reusable filter components with session state persistence
 across page navigation.
 """
 
-import streamlit as st
+from datetime import date
+
 import pandas as pd
-from datetime import date, timedelta
-from typing import Optional
+import streamlit as st
 
-from src.dashboard.data import FilterState, load_conceptos, load_dependencias, load_asuntos, ensure_asuntos_populated
-
+from src.dashboard.data import (
+    FilterState,
+    ensure_asuntos_populated,
+    load_asuntos,
+    load_conceptos,
+    load_dependencias,
+)
 
 # Session state keys
 FILTER_KEY = "dashboard_filters"
@@ -19,11 +24,14 @@ DATE_RANGE_KEY = "date_range"
 CONCEPTOS_KEY = "selected_conceptos"
 DEPENDENCIAS_KEY = "selected_dependencias"
 ASUNTOS_KEY = "selected_asuntos"
+FILTER_GENERATION_KEY = "_filter_generation"
+ASUNTOS_KEY = "selected_asuntos"
 
 
 def _get_default_year() -> int:
     """Get the default year based on available data in the database."""
     from src.dashboard.data import _get_data_year_range
+
     min_year, max_year = _get_data_year_range()
     if min_year and max_year:
         # Use the latest year with data
@@ -50,6 +58,7 @@ def init_filter_state() -> None:
         st.session_state[CONCEPTOS_KEY] = []
         st.session_state[DEPENDENCIAS_KEY] = []
         st.session_state[ASUNTOS_KEY] = []
+        st.session_state[FILTER_GENERATION_KEY] = 0
 
 
 def get_filter_state() -> FilterState:
@@ -81,15 +90,11 @@ def reset_filters() -> None:
     st.session_state[DEPENDENCIAS_KEY] = []
     st.session_state[ASUNTOS_KEY] = []
 
-    # Reset widget keys directly so Streamlit clears internal widget state
-    st.session_state["filter_date_start"] = start_of_year
-    st.session_state["filter_date_end"] = end_of_year
-    st.session_state["filter_conceptos"] = []
-    st.session_state["filter_dependencias"] = []
-    st.session_state["filter_asuntos"] = []
+    # Increment generation counter so widgets know to use defaults
+    st.session_state[FILTER_GENERATION_KEY] = st.session_state.get(FILTER_GENERATION_KEY, 0) + 1
 
 
-def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
+def render_date_range_filter() -> tuple[str | None, str | None]:
     """
     Render date range picker widget.
 
@@ -108,23 +113,22 @@ def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
 
     col1, col2 = st.columns(2)
 
+    # Use generation counter to force widget reset after "Restablecer Filtros"
+    gen = st.session_state.get(FILTER_GENERATION_KEY, 0)
+
     with col1:
-        # Set widget key before rendering so Streamlit picks up reset values
-        st.session_state["filter_date_start"] = current_range[0]
         start_date = st.date_input(
             "Fecha inicio",
             value=current_range[0],
-            key="filter_date_start",
+            key=f"filter_date_start_{gen}",
             help="Fecha de alta del expediente (inicio del rango)",
         )
 
     with col2:
-        # Set widget key before rendering so Streamlit picks up reset values
-        st.session_state["filter_date_end"] = current_range[1]
         end_date = st.date_input(
             "Fecha fin",
             value=current_range[1],
-            key="filter_date_end",
+            key=f"filter_date_end_{gen}",
             help="Fecha de alta del expediente (fin del rango)",
         )
 
@@ -133,8 +137,10 @@ def render_date_range_filter() -> tuple[Optional[str], Optional[str]]:
         st.session_state[DATE_RANGE_KEY] = (start_date, end_date)
         filters = get_filter_state()
         new_filters = FilterState(
-            date_range=(start_date.isoformat() if start_date else None,
-                       end_date.isoformat() if end_date else None),
+            date_range=(
+                start_date.isoformat() if start_date else None,
+                end_date.isoformat() if end_date else None,
+            ),
             conceptos=filters.conceptos,
             dependencias=filters.dependencias,
         )
@@ -165,13 +171,15 @@ def render_concepto_filter() -> list[str]:
     # Ensure current selection is valid
     current = [c for c in current if c in all_conceptos]
 
-    # Set the widget key before rendering so Streamlit picks it up
-    st.session_state["filter_conceptos"] = current
+    # Use generation counter to force widget reset after "Restablecer Filtros"
+    gen = st.session_state.get(FILTER_GENERATION_KEY, 0)
+    widget_key = f"filter_conceptos_{gen}"
 
     selected = st.multiselect(
         "Conceptos",
         options=all_conceptos,
-        key="filter_conceptos",
+        default=[],
+        key=widget_key,
         help="Filtrar por tipo de trámite/concepto",
         placeholder="Seleccionar conceptos...",
     )
@@ -180,15 +188,23 @@ def render_concepto_filter() -> list[str]:
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("Todos", key="btn_select_all_conceptos", width="stretch",
-                     help="Seleccionar todos los conceptos"):
+        if st.button(
+            "Todos",
+            key="btn_select_all_conceptos",
+            width="stretch",
+            help="Seleccionar todos los conceptos",
+        ):
             selected = all_conceptos
             st.session_state[CONCEPTOS_KEY] = selected
             st.rerun()
 
     with col2:
-        if st.button("Ninguno", key="btn_clear_all_conceptos", width="stretch",
-                     help="Deseleccionar todos los conceptos"):
+        if st.button(
+            "Ninguno",
+            key="btn_clear_all_conceptos",
+            width="stretch",
+            help="Deseleccionar todos los conceptos",
+        ):
             selected = []
             st.session_state[CONCEPTOS_KEY] = selected
             st.rerun()
@@ -226,13 +242,15 @@ def render_dependencia_filter() -> list[str]:
     # Ensure current selection is valid
     current = [d for d in current if d in all_dependencias]
 
-    # Set the widget key before rendering so Streamlit picks it up
-    st.session_state["filter_dependencias"] = current
+    # Use generation counter to force widget reset after "Restablecer Filtros"
+    gen = st.session_state.get(FILTER_GENERATION_KEY, 0)
+    widget_key = f"filter_dependencias_{gen}"
 
     selected = st.multiselect(
         "Dependencias",
         options=all_dependencias,
-        key="filter_dependencias",
+        default=[],
+        key=widget_key,
         help="Filtrar por dependencias por donde pasó el expediente (búsqueda con autocompletado)",
         placeholder="Buscar y seleccionar dependencias...",
         max_selections=20,  # Reasonable limit for performance
@@ -298,13 +316,15 @@ def render_asunto_filter() -> list[str]:
     disabled = not selected_conceptos
     placeholder = "Primero seleccione un concepto..." if disabled else "Seleccionar asuntos..."
 
-    # Set the widget key before rendering so Streamlit picks it up
-    st.session_state["filter_asuntos"] = current
+    # Use generation counter to force widget reset after "Restablecer Filtros"
+    gen = st.session_state.get(FILTER_GENERATION_KEY, 0)
+    widget_key = f"filter_asuntos_{gen}"
 
     selected = st.multiselect(
         "Asuntos",
         options=all_asuntos,
-        key="filter_asuntos",
+        default=[],
+        key=widget_key,
         help="Filtrar por asunto/tipo de trámite (disponible solo con un concepto seleccionado)",
         placeholder=placeholder,
         disabled=disabled,
@@ -336,7 +356,8 @@ def render_global_filters_sidebar() -> FilterState:
 
     with st.sidebar:
         # Filters section header - matching FBCB institutional style
-        st.markdown("""
+        st.markdown(
+            """
             <div style="
                 background-color: #f0fdf4;
                 border-left: 4px solid #00A94F;
@@ -352,10 +373,13 @@ def render_global_filters_sidebar() -> FilterState:
                     font-size: 1rem;
                 ">🔍 Filtros Globales</h3>
             </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         # Date range
-        st.markdown("""
+        st.markdown(
+            """
             <div style="
                 color: #00A94F;
                 font-family: 'Montserrat', sans-serif;
@@ -365,13 +389,16 @@ def render_global_filters_sidebar() -> FilterState:
                 letter-spacing: 0.5px;
                 margin-bottom: 0.5rem;
             ">📅 Rango de fechas</div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
         render_date_range_filter()
 
         st.divider()
 
         # Concepto filter
-        st.markdown("""
+        st.markdown(
+            """
             <div style="
                 color: #00A94F;
                 font-family: 'Montserrat', sans-serif;
@@ -381,13 +408,16 @@ def render_global_filters_sidebar() -> FilterState:
                 letter-spacing: 0.5px;
                 margin-bottom: 0.5rem;
             ">📋 Conceptos</div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
         render_concepto_filter()
 
         st.divider()
 
         # Dependencia filter
-        st.markdown("""
+        st.markdown(
+            """
             <div style="
                 color: #00A94F;
                 font-family: 'Montserrat', sans-serif;
@@ -397,13 +427,16 @@ def render_global_filters_sidebar() -> FilterState:
                 letter-spacing: 0.5px;
                 margin-bottom: 0.5rem;
             ">🏢 Dependencias</div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
         render_dependencia_filter()
 
         st.divider()
 
         # Asunto filter - only shows when a concepto is selected
-        st.markdown("""
+        st.markdown(
+            """
             <div style="
                 color: #00A94F;
                 font-family: 'Montserrat', sans-serif;
@@ -413,16 +446,12 @@ def render_global_filters_sidebar() -> FilterState:
                 letter-spacing: 0.5px;
                 margin-bottom: 0.5rem;
             ">📋 Asuntos</div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
         render_asunto_filter()
 
         st.divider()
-
-        # Reset button - institutional green
-        if st.button("🔄 Restablecer filtros", width="stretch",
-                     help="Volver a valores por defecto (todo el año, todos los conceptos/dependencias)"):
-            reset_filters()
-            st.rerun()
 
         # Show active filter summary
         filters = get_filter_state()
@@ -437,7 +466,8 @@ def render_global_filters_sidebar() -> FilterState:
             active_count += 1
 
         if active_count > 0:
-            st.markdown(f"""
+            st.markdown(
+                f"""
                 <div style="
                     background-color: #dcfce7;
                     border-radius: 6px;
@@ -448,9 +478,21 @@ def render_global_filters_sidebar() -> FilterState:
                     color: #244C5A;
                     border-left: 3px solid #00A94F;
                 ">
-                    🔍 {active_count} filtro{'s' if active_count > 1 else ''} activo{'s' if active_count > 1 else ''}
+                    🔍 {active_count} filtro{"s" if active_count > 1 else ""} activo{"s" if active_count > 1 else ""}
                 </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
+
+        # Reset filters button — callback fires BEFORE rerun so widgets get cleared
+        if st.button(
+            "🔄 Restablecer Filtros",
+            use_container_width=True,
+            key="reset_filters_btn",
+            help="Volver a valores por defecto (todo el año, todos los conceptos/dependencias)",
+        ):
+            reset_filters()
+            st.rerun()
 
     return get_filter_state()
 

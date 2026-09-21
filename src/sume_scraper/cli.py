@@ -6,9 +6,8 @@ opciones de configuración.
 """
 
 import argparse
-import sys
 import logging
-from pathlib import Path
+import sys
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -50,7 +49,7 @@ Ejemplos de uso:
   python -m src.sume_scraper --faculty FCA --date-from 2025-01-01 --date-to 2025-12-31
         """,
     )
-    
+
     parser.add_argument(
         "--faculty",
         required=True,
@@ -90,21 +89,22 @@ Ejemplos de uso:
         help="Ruta a la base de datos (default: data/sume.db)",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Habilitar logging detallado",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Configurar logging
     setup_logging(args.verbose)
-    
+
     # Importar aquí para evitar importaciones circulares
     from .config import ScraperConfig
     from .scraper import SUMEScraper
     from .validator import ScrapingValidator
-    
+
     try:
         # Crear configuración
         config = ScraperConfig(
@@ -113,7 +113,7 @@ Ejemplos de uso:
             date_to=args.date_to,
             db_path=args.db_path,
         )
-        
+
         # Limpiar DB si se solicita
         if args.clean or args.clean_all:
             preserve_asuntos = not args.clean_all
@@ -124,44 +124,44 @@ Ejemplos de uso:
             if response.lower() != "s":
                 print("Operación cancelada.")
                 return 0
-            
+
             _clean_database(config.db_path, preserve_asuntos=preserve_asuntos)
             print("✓ Base de datos limpiada")
-        
+
         # Crear y ejecutar scraper
         scraper = SUMEScraper(config)
-        
+
         # Si hay max_pages, limitar el scraping
         if args.max_pages:
             print(f"⚠️  Modo limitado: máximo {args.max_pages} páginas")
-        
+
         print(f"\n🚀 Iniciando scraping de {config.faculty_code}...")
         if config.date_from or config.date_to:
             print(f"   Período: {config.date_from or '...'} a {config.date_to or '...'}")
-        
+
         result = scraper.run()
-        
+
         # Imprimir resultado
         result.print_summary()
-        
+
         # Ejecutar validaciones si se solicita
         if args.validate:
             print("\n🔍 Ejecutando validaciones...")
             validator = ScrapingValidator(config.db_path)
             validation = validator.validate()
             validation.print_summary()
-            
+
             if validation.has_errors():
                 print("\n❌ Se encontraron errores en la validación")
                 return 1
-        
+
         if result.success:
             print("\n✅ Scraping completado exitosamente")
             return 0
         else:
             print("\n❌ Scraping completado con errores")
             return 1
-    
+
     except ValueError as e:
         print(f"❌ Error de configuración: {e}", file=sys.stderr)
         return 1
@@ -177,18 +177,18 @@ Ejemplos de uso:
 def _clean_database(db_path: str, preserve_asuntos: bool = True) -> None:
     """
     Limpiar la base de datos.
-    
+
     Elimina todos los datos de las tablas principales
     pero mantiene el esquema.
-    
+
     Args:
         db_path: Ruta a la base de datos
         preserve_asuntos: Si es True, preserva los asuntos existentes (default: True)
     """
     import sqlite3
-    
+
     conn = sqlite3.connect(db_path)
-    
+
     # Eliminar datos en orden correcto (respetar foreign keys)
     tables_to_clean = [
         "expediente_asuntos",
@@ -196,14 +196,14 @@ def _clean_database(db_path: str, preserve_asuntos: bool = True) -> None:
         "expedientes",
         "dependencias",
     ]
-    
+
     # Solo eliminar asuntos si no se deben preservar
     if not preserve_asuntos:
         tables_to_clean.append("asuntos")
-    
+
     for table in tables_to_clean:
         conn.execute(f"DELETE FROM {table}")
-    
+
     conn.commit()
     conn.close()
 

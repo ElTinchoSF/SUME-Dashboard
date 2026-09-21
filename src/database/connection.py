@@ -9,15 +9,15 @@ Provides a singleton connection with:
 - WAL mode for better concurrency
 """
 
+import logging
 import sqlite3
 import threading
-import logging
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional
 
 from src.config import get_settings
-from src.database.schema import INIT_SQL, SCHEMA_VERSION, MIGRATIONS_TABLE_SQL
+from src.database.schema import INIT_SQL, MIGRATIONS_TABLE_SQL, SCHEMA_VERSION
 
 logger = logging.getLogger("sume.db")
 
@@ -136,7 +136,9 @@ def close_all_connections() -> None:
 
 
 @contextmanager
-def transaction(conn: Optional[sqlite3.Connection] = None) -> Generator[sqlite3.Connection, None, None]:
+def transaction(
+    conn: sqlite3.Connection | None = None,
+) -> Generator[sqlite3.Connection, None, None]:
     """
     Context manager for database transactions.
 
@@ -220,10 +222,10 @@ def check_integrity() -> bool:
 
 
 # For testing: allow replacing the connection factory
-_override_connection_factory: Optional[callable] = None
+_override_connection_factory: callable | None = None
 
 
-def set_connection_factory(factory: Optional[callable]) -> None:
+def set_connection_factory(factory: callable | None) -> None:
     """
     Override the connection factory (for testing).
 

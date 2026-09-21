@@ -1,0 +1,48 @@
+# =============================================================================
+# SUME Dashboard — docker-compose.yml
+# Usage:
+#   docker compose up              # build + run in foreground
+#   docker compose up -d           # build + run detached
+#   docker compose down            # stop and remove
+#   docker compose logs -f         # follow logs
+#   docker compose build --no-cache  # force rebuild
+# =============================================================================
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: sume-dashboard
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8504}:8504"
+    volumes:
+      # SQLite database (read-write for data pipeline, read-only for dashboard)
+      - ./data/sume.db:/app/data/sume.db:rw
+      # Config file (override if needed)
+      - ./config.yaml:/app/config.yaml:ro
+      # Normalization rules
+      - ./config:/app/config:ro
+      # Reports output directory
+      - ./reports:/app/reports
+      # Logs
+      - ./logs:/app/logs
+    environment:
+      - SUME_LOG_LEVEL=${SUME_LOG_LEVEL:-INFO}
+      - STREAMLIT_SERVER_HEADLESS=true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8504/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+          cpus: "0.5"

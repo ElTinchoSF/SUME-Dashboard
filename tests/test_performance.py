@@ -7,30 +7,28 @@ Benchmarks:
 - Dashboard initial load < 3s
 """
 
-import json
 import sqlite3
 import tempfile
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 
 from src.analysis.circuits import run_full_circuit_analysis
-from src.analysis.statistics import run_full_statistics_analysis
 from src.analysis.reports import generate_main_report
-from src.database.connection import get_connection, close_connection, set_connection_factory
+from src.analysis.statistics import run_full_statistics_analysis
+from src.config import DatabaseConfig, Settings
+from src.database.connection import close_connection, set_connection_factory
 from src.database.schema import INIT_SQL
-from src.config import Settings, DatabaseConfig
-from src.scraper.client import SUMEClient
-from src.scraper.config import ScraperConfig
-
+from src.sume_scraper.client import SUMEClient
+from src.sume_scraper.config import ScraperConfig
 
 # ============================================================================
 # Benchmark Database Fixtures
 # ============================================================================
+
 
 def create_benchmark_db(num_expedientes: int, db_path: str) -> sqlite3.Connection:
     """Create a database with synthetic expedientes for benchmarking."""
@@ -44,9 +42,15 @@ def create_benchmark_db(num_expedientes: int, db_path: str) -> sqlite3.Connectio
     conn.commit()
 
     import random
+
     random.seed(42)
 
-    conceptos = ["Gestión Alumno", "Gestión de Becas", "Trámites Docentes", "Administración General"]
+    conceptos = [
+        "Gestión Alumno",
+        "Gestión de Becas",
+        "Trámites Docentes",
+        "Administración General",
+    ]
     concept_weights = [0.4, 0.3, 0.2, 0.1]
 
     deps_by_concepto = {
@@ -82,25 +86,107 @@ def create_benchmark_db(num_expedientes: int, db_path: str) -> sqlite3.Connectio
     circuits_by_concepto = {
         "Gestión Alumno": [
             (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica"], 0.5),
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Dirección de Carreras", "Secretaría Académica"], 0.25),
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica", "Consejo Directivo"], 0.15),
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica", "Dirección de Carreras", "Consejo Directivo"], 0.05),
-            (["Mesa de Entradas - FBCB", "Departamento Alumnos", "Secretaría Académica", "Departamento Alumnos"], 0.05),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Dirección de Carreras",
+                    "Secretaría Académica",
+                ],
+                0.25,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Secretaría Académica",
+                    "Consejo Directivo",
+                ],
+                0.15,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Secretaría Académica",
+                    "Dirección de Carreras",
+                    "Consejo Directivo",
+                ],
+                0.05,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Alumnos",
+                    "Secretaría Académica",
+                    "Departamento Alumnos",
+                ],
+                0.05,
+            ),
         ],
         "Gestión de Becas": [
             (["Mesa de Entradas - FBCB", "Departamento Becas", "Comité Evaluador"], 0.5),
-            (["Mesa de Entradas - FBCB", "Departamento Becas", "Secretaría de Bienestar", "Comité Evaluador"], 0.3),
-            (["Mesa de Entradas - FBCB", "Departamento Becas", "Tesorería", "Secretaría de Bienestar", "Comité Evaluador"], 0.15),
-            (["Mesa de Entradas - FBCB", "Departamento Becas", "Comité Evaluador", "Departamento Becas"], 0.05),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Becas",
+                    "Secretaría de Bienestar",
+                    "Comité Evaluador",
+                ],
+                0.3,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Becas",
+                    "Tesorería",
+                    "Secretaría de Bienestar",
+                    "Comité Evaluador",
+                ],
+                0.15,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Becas",
+                    "Comité Evaluador",
+                    "Departamento Becas",
+                ],
+                0.05,
+            ),
         ],
         "Trámites Docentes": [
             (["Mesa de Entradas - FBCB", "Departamento Docentes", "Secretaría Académica"], 0.6),
-            (["Mesa de Entradas - FBCB", "Departamento Docentes", "Dirección de Carreras", "Secretaría Académica"], 0.25),
-            (["Mesa de Entradas - FBCB", "Departamento Docentes", "Secretaría Académica", "Consejo Directivo"], 0.15),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Docentes",
+                    "Dirección de Carreras",
+                    "Secretaría Académica",
+                ],
+                0.25,
+            ),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Departamento Docentes",
+                    "Secretaría Académica",
+                    "Consejo Directivo",
+                ],
+                0.15,
+            ),
         ],
         "Administración General": [
             (["Mesa de Entradas - FBCB", "Secretaría Administrativa", "Dirección General"], 0.6),
-            (["Mesa de Entradas - FBCB", "Secretaría Administrativa", "Asesoría Legal", "Dirección General"], 0.4),
+            (
+                [
+                    "Mesa de Entradas - FBCB",
+                    "Secretaría Administrativa",
+                    "Asesoría Legal",
+                    "Dirección General",
+                ],
+                0.4,
+            ),
         ],
     }
 
@@ -112,8 +198,7 @@ def create_benchmark_db(num_expedientes: int, db_path: str) -> sqlite3.Connectio
         concepto = random.choices(conceptos, weights=concept_weights)[0]
         circuits = circuits_by_concepto[concepto]
         circuit_pattern = random.choices(
-            [c[0] for c in circuits],
-            weights=[c[1] for c in circuits]
+            [c[0] for c in circuits], weights=[c[1] for c in circuits]
         )[0]
 
         numero = f"EXP-2025-{expediente_id:06d}"
@@ -183,6 +268,7 @@ def benchmark_db_2k() -> Generator[sqlite3.Connection, None, None]:
     set_connection_factory(factory)
 
     import src.config
+
     original_get_settings = src.config.get_settings
 
     def test_get_settings():
@@ -227,6 +313,7 @@ def benchmark_db_4k() -> Generator[sqlite3.Connection, None, None]:
     set_connection_factory(factory)
 
     import src.config
+
     original_get_settings = src.config.get_settings
 
     def test_get_settings():
@@ -256,6 +343,7 @@ def benchmark_db_4k() -> Generator[sqlite3.Connection, None, None]:
 # Scraper Benchmarks (Mock HTTP)
 # ============================================================================
 
+
 class TestScraperPerformance:
     """Performance benchmarks for scraper with mock HTTP."""
 
@@ -275,9 +363,9 @@ class TestScraperPerformance:
         # We'll test the parsing + normalization + DB write pipeline directly
         # by measuring the scraper orchestrator's _process_expediente equivalent
 
-        from src.scraper.parser import parse_detail_page, parse_movimientos_table
-        from src.scraper.normalizer import get_normalizer, normalize
-        from src.database import get_connection, transaction
+        from src.database import transaction
+        from src.sume_scraper.normalizer import get_normalizer, normalize
+        from src.sume_scraper.parser import parse_detail_page, parse_movimientos_table
 
         normalizer_rules = get_normalizer(Path(config.normalization_rules_path))
 
@@ -355,11 +443,12 @@ class TestScraperPerformance:
         # With mock HTTP, this should complete in well under 2 hours
         # We set a generous threshold of 300 seconds (5 minutes) for the mocked pipeline
         max_allowed_seconds = 300  # 5 minutes for mocked pipeline
-        assert elapsed < max_allowed_seconds, \
+        assert elapsed < max_allowed_seconds, (
             f"Scraper mock pipeline took {elapsed:.1f}s, expected < {max_allowed_seconds}s (2hr budget for real HTTP)"
+        )
 
         print(f"\nScraper mock pipeline (2K expedientes): {elapsed:.2f}s")
-        print(f"  Throughput: {2000/elapsed:.1f} expedientes/sec")
+        print(f"  Throughput: {2000 / elapsed:.1f} expedientes/sec")
         print(f"  Extrapolated real HTTP (0.5s delay): ~{2000 * 0.5 / 3600:.1f} hours")
 
     @pytest.mark.slow
@@ -383,12 +472,13 @@ class TestScraperPerformance:
 
             # 100 requests should complete very fast with mock
             assert elapsed < 1.0, f"100 mock requests took {elapsed:.2f}s, expected < 1s"
-            print(f"\n100 mock HTTP requests: {elapsed*1000:.1f}ms")
+            print(f"\n100 mock HTTP requests: {elapsed * 1000:.1f}ms")
 
 
 # ============================================================================
 # Analyzer Benchmarks
 # ============================================================================
+
 
 class TestAnalyzerPerformance:
     """Performance benchmarks for analyzer."""
@@ -416,14 +506,15 @@ class TestAnalyzerPerformance:
 
         total_time = circuit_time + stats_time
 
-        print(f"\nAnalyzer benchmark (4K expedientes):")
+        print("\nAnalyzer benchmark (4K expedientes):")
         print(f"  Circuit analysis: {circuit_time:.2f}s")
         print(f"  Statistics analysis: {stats_time:.2f}s")
         print(f"  Total: {total_time:.2f}s")
 
         # Budget: 10 seconds for 4K expedientes
-        assert total_time < 10.0, \
+        assert total_time < 10.0, (
             f"Analyzer took {total_time:.2f}s for 4K expedientes, expected < 10s"
+        )
 
         # Verify correctness
         assert result["frecuencia"].sum() == 4000
@@ -446,18 +537,20 @@ class TestAnalyzerPerformance:
 
         total_time = circuit_time + stats_time
 
-        print(f"\nAnalyzer benchmark (2K expedientes):")
+        print("\nAnalyzer benchmark (2K expedientes):")
         print(f"  Circuit analysis: {circuit_time:.2f}s")
         print(f"  Statistics analysis: {stats_time:.2f}s")
         print(f"  Total: {total_time:.2f}s")
 
-        assert total_time < 5.0, \
+        assert total_time < 5.0, (
             f"Analyzer took {total_time:.2f}s for 2K expedientes, expected < 5s"
+        )
 
     @pytest.mark.benchmark
     def test_circuit_analysis_scalability(self):
         """Test that circuit analysis scales roughly linearly."""
         import random
+
         random.seed(42)
 
         times = []
@@ -480,6 +573,7 @@ class TestAnalyzerPerformance:
             set_connection_factory(factory)
 
             import src.config
+
             original_get_settings = src.config.get_settings
 
             def test_get_settings():
@@ -515,13 +609,15 @@ class TestAnalyzerPerformance:
             ratio = times[-1] / times[0]
             size_ratio = sizes[-1] / sizes[0]
             # Allow some overhead, but should not be quadratic
-            assert ratio < size_ratio * 1.5, \
+            assert ratio < size_ratio * 1.5, (
                 f"Scaling ratio {ratio:.2f}x for {size_ratio}x data suggests super-linear complexity"
+            )
 
 
 # ============================================================================
 # Dashboard Benchmarks
 # ============================================================================
+
 
 class TestDashboardPerformance:
     """Performance benchmarks for dashboard data loading."""
@@ -535,17 +631,17 @@ class TestDashboardPerformance:
         Tests all cached data loading functions that run on initial page load.
         """
         from src.dashboard.data import (
-            load_expedientes,
-            load_circuitos,
-            load_step_stats,
-            load_permanence,
-            load_dependencias,
-            load_conceptos,
-            load_dependency_traffic,
-            load_concept_distribution,
-            load_monthly_trend,
             FilterState,
             invalidate_cache,
+            load_circuitos,
+            load_concept_distribution,
+            load_conceptos,
+            load_dependencias,
+            load_dependency_traffic,
+            load_expedientes,
+            load_monthly_trend,
+            load_permanence,
+            load_step_stats,
         )
 
         # Ensure analysis is done first
@@ -570,7 +666,7 @@ class TestDashboardPerformance:
 
         elapsed = time.time() - start_time
 
-        print(f"\nDashboard initial load benchmark (2K expedientes):")
+        print("\nDashboard initial load benchmark (2K expedientes):")
         print(f"  Total time: {elapsed:.2f}s")
         print(f"  expedientes: {len(expedientes_df)} rows")
         print(f"  circuitos: {len(circuitos_df)} rows")
@@ -583,8 +679,7 @@ class TestDashboardPerformance:
         print(f"  monthly_trend: {len(monthly_df)} rows")
 
         # Budget: 3 seconds for initial load
-        assert elapsed < 3.0, \
-            f"Dashboard initial load took {elapsed:.2f}s, expected < 3s"
+        assert elapsed < 3.0, f"Dashboard initial load took {elapsed:.2f}s, expected < 3s"
 
         # Verify data integrity
         assert len(expedientes_df) == 2000
@@ -595,11 +690,10 @@ class TestDashboardPerformance:
     def test_dashboard_cached_load_fast(self, benchmark_db_2k):
         """Test that cached dashboard loads are very fast (< 500ms)."""
         from src.dashboard.data import (
-            load_expedientes,
-            load_circuitos,
-            load_step_stats,
             FilterState,
-            invalidate_cache,
+            load_circuitos,
+            load_expedientes,
+            load_step_stats,
         )
 
         run_full_circuit_analysis(benchmark_db_2k)
@@ -617,15 +711,16 @@ class TestDashboardPerformance:
         _ = load_step_stats()
         elapsed = time.time() - start_time
 
-        print(f"\nDashboard cached load: {elapsed*1000:.1f}ms")
+        print(f"\nDashboard cached load: {elapsed * 1000:.1f}ms")
 
         # Cached loads should be very fast
-        assert elapsed < 0.5, f"Cached load took {elapsed*1000:.1f}ms, expected < 500ms"
+        assert elapsed < 0.5, f"Cached load took {elapsed * 1000:.1f}ms, expected < 500ms"
 
 
 # ============================================================================
 # Report Generation Benchmarks
 # ============================================================================
+
 
 class TestReportPerformance:
     """Performance benchmarks for report generation."""

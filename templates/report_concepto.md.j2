@@ -92,7 +92,7 @@ _Se muestran los 10 circuitos más frecuentes de {{ concept_circuits | length }}
 {% set modal_expedientes = modal_expedientes + [mov.numero] %}
 {% endif %}
 {% endfor %}
-{% set unique_modal_exp = modal_expedientes | unique %}
+{% set unique_modal_exp = modal_expedientes | unique | list %}
 **Total:** {{ unique_modal_exp | length }} expedientes
 
 | N° Expediente | Fecha Alta | Pasos Completados |
@@ -138,8 +138,10 @@ _No se detectaron outliers para este concepto_
 {% endfor %}
 
 ### Análisis de Permanencia
-- **Dependencia con mayor permanencia media:** {{ permanence_by_dependencia | max(attribute='mean_days').dependencia if permanence_by_dependencia }} ({{ permanence_by_dependencia | max(attribute='mean_days').mean_days | round2 }} días)
-- **Dependencia con mayor variabilidad:** {{ permanence_by_dependencia | max(attribute='std_days').dependencia if permanence_by_dependencia }} (σ = {{ permanence_by_dependencia | max(attribute='std_days').std_days | round2 }})
+{% set max_mean = permanence_by_dependencia | max(attribute='mean_days') if permanence_by_dependencia %}
+{% set max_std = permanence_by_dependencia | max(attribute='std_days') if permanence_by_dependencia %}
+- **Dependencia con mayor permanencia media:** {{ max_mean.dependencia if max_mean }} ({{ max_mean.mean_days | round2 if max_mean }} días)
+- **Dependencia con mayor variabilidad:** {{ max_std.dependencia if max_std }} (σ = {{ max_std.std_days | round2 if max_std }})
 - **Posibles cuellos de botella:** Dependencias con mediana > 5 días
 
 ---

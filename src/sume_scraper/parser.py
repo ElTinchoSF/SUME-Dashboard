@@ -11,12 +11,11 @@ Updated for new SUME structure (2026):
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from src.scraper.config import SelectorConfig
+from src.sume_scraper.config import SelectorConfig
 
 
 @dataclass
@@ -25,13 +24,13 @@ class ExpedienteDict:
 
     numero: str
     concepto: str
-    descripcion: Optional[str]
+    descripcion: str | None
     fecha_alta: str
-    estado: Optional[str]
-    palabras_clave: Optional[str]
-    origenes: Optional[str]
+    estado: str | None
+    palabras_clave: str | None
+    origenes: str | None
     detail_url: str
-    ultimo_movimiento: Optional[str] = None
+    ultimo_movimiento: str | None = None
 
 
 @dataclass
@@ -49,11 +48,13 @@ class ListingResult:
     """Result of parsing a listing page."""
 
     expedientes: list[ExpedienteDict]
-    next_page_num: Optional[int]
+    next_page_num: int | None
     total_pages: int
 
 
-def parse_listing_page(html: str, base_url: str, selectors: Optional[SelectorConfig] = None) -> ListingResult:
+def parse_listing_page(
+    html: str, base_url: str, selectors: SelectorConfig | None = None
+) -> ListingResult:
     """
     Parse a SUME listing page to extract expedientes and pagination.
 
@@ -101,20 +102,26 @@ def parse_listing_page(html: str, base_url: str, selectors: Optional[SelectorCon
             concepto = cells[2].get_text(strip=True)
             origen = cells[3].get_text(strip=True) or None
             fecha_alta = _normalize_date(cells[4].get_text(strip=True))
-            ultimo_movimiento = _normalize_date(cells[5].get_text(strip=True)) if cells[5].get_text(strip=True) else None
+            ultimo_movimiento = (
+                _normalize_date(cells[5].get_text(strip=True))
+                if cells[5].get_text(strip=True)
+                else None
+            )
 
             if numero and concepto:
-                expedientes.append(ExpedienteDict(
-                    numero=numero,
-                    concepto=concepto,
-                    descripcion=descripcion,
-                    fecha_alta=fecha_alta,
-                    estado=None,
-                    palabras_clave=None,
-                    origenes=origen,
-                    detail_url=detail_url,
-                    ultimo_movimiento=ultimo_movimiento,
-                ))
+                expedientes.append(
+                    ExpedienteDict(
+                        numero=numero,
+                        concepto=concepto,
+                        descripcion=descripcion,
+                        fecha_alta=fecha_alta,
+                        estado=None,
+                        palabras_clave=None,
+                        origenes=origen,
+                        detail_url=detail_url,
+                        ultimo_movimiento=ultimo_movimiento,
+                    )
+                )
 
     # Parse pagination
     next_page_num = None
@@ -163,7 +170,9 @@ def parse_listing_page(html: str, base_url: str, selectors: Optional[SelectorCon
     )
 
 
-def parse_detail_page(html: str, url: str, selectors: Optional[SelectorConfig] = None) -> ExpedienteDict:
+def parse_detail_page(
+    html: str, url: str, selectors: SelectorConfig | None = None
+) -> ExpedienteDict:
     """
     Parse a SUME expediente detail page.
 
@@ -215,7 +224,9 @@ def parse_detail_page(html: str, url: str, selectors: Optional[SelectorConfig] =
     )
 
 
-def parse_movimientos_table(html: str, selectors: Optional[SelectorConfig] = None) -> list[MovimientoDict]:
+def parse_movimientos_table(
+    html: str, selectors: SelectorConfig | None = None
+) -> list[MovimientoDict]:
     """
     Parse the movimientos (pases) table from a detail page.
 
@@ -245,12 +256,14 @@ def parse_movimientos_table(html: str, selectors: Optional[SelectorConfig] = Non
             dependencia = cells[2].get_text(strip=True)
 
             if dependencia:
-                movimientos.append(MovimientoDict(
-                    orden=i,
-                    fecha_envio=fecha_envio,
-                    fecha_recepcion=fecha_recepcion,
-                    dependencia=dependencia,
-                ))
+                movimientos.append(
+                    MovimientoDict(
+                        orden=i,
+                        fecha_envio=fecha_envio,
+                        fecha_recepcion=fecha_recepcion,
+                        dependencia=dependencia,
+                    )
+                )
 
     return movimientos
 
@@ -282,6 +295,7 @@ def _normalize_date(date_str: str) -> str:
     # Try to parse with dateutil if available, otherwise return as-is
     try:
         from dateutil import parser as date_parser
+
         parsed = date_parser.parse(date_str, dayfirst=True)
         return parsed.strftime("%Y-%m-%d")
     except (ImportError, ValueError):

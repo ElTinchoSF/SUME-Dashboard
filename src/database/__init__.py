@@ -6,21 +6,23 @@ for the SQLite database used as the single source of truth.
 """
 
 from src.database.connection import (
-    get_connection,
-    close_connection,
-    transaction,
     _initialize_schema as init_database,
 )
+from src.database.connection import (
+    close_connection,
+    get_connection,
+    transaction,
+)
 from src.database.models import (
+    CircuitoDict,
+    DependenciaDict,
     ExpedienteDict,
     MovimientoDict,
-    DependenciaDict,
-    CircuitoDict,
 )
 from src.database.schema import (
-    SCHEMA_SQL,
     INDEXES_SQL,
     INIT_SQL,
+    SCHEMA_SQL,
 )
 
 __all__ = [

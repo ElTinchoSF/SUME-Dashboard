@@ -17,25 +17,25 @@ Plus:
 
 import pytest
 
-from src.scraper.normalizer import (
-    normalize,
-    load_rules,
-    NormalizationRules,
+from src.sume_scraper.normalizer import (
     NormalizationRule,
-    get_normalizer,
+    NormalizationRules,
     clear_normalizer_cache,
+    get_normalizer,
+    load_rules,
+    normalize,
 )
-from src.scraper.config import SelectorConfig
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def rules() -> NormalizationRules:
     """Load the actual normalization rules from config file."""
     from pathlib import Path
+
     return load_rules(Path("config/normalization_rules.yaml"))
 
 
@@ -51,70 +51,66 @@ def clear_cache():
 # Rule 1: Explicit Override Tests (Highest Precedence)
 # ============================================================================
 
+
 class TestExplicitOverride:
     """Tests for explicit override rule (checked first)."""
 
-    @pytest.mark.parametrize("input_name,expected", [
-        # Mesa de Entradas variations
-        ("Mesa de Entradas FBCB", "Mesa de Entradas"),
-        ("Mesa de Entradas FHUC", "Mesa de Entradas"),
-        ("Mesa de Entradas FADU", "Mesa de Entradas"),
-        ("Mesa de Entradas FCJS", "Mesa de Entradas"),
-        ("Mesa de Entradas FICH", "Mesa de Entradas"),
-        ("Mesa de Entradas FCE", "Mesa de Entradas"),
-        ("Mesa de Entradas FAVE", "Mesa de Entradas"),
-        ("Mesa de Entradas FRSF", "Mesa de Entradas"),
-        ("Mesa de Entradas CEN", "Mesa de Entradas"),
-
-        # Abbreviations
-        ("MDE FBCB", "Mesa de Entradas"),
-        ("MDE", "Mesa de Entradas"),
-        ("M.D.E.", "Mesa de Entradas"),
-
-        # Department variations
-        ("Dpto. Alumnos", "Departamento Alumnos"),
-        ("Dpto.Alumnos", "Departamento Alumnos"),
-        ("Depto. Alumnos", "Departamento Alumnos"),
-        ("Departamento de Alumnos", "Departamento Alumnos"),
-        ("Dpto Alumnos (FBCB)", "Departamento Alumnos"),
-        ("Dpto. Alumnos (FBCB)", "Departamento Alumnos"),
-
-        ("Sec. Académica", "Secretaría Académica"),
-        ("Secretaría Académica (FBCB)", "Secretaría Académica"),
-
-        ("Dir. Gral. Admin.", "Dirección General de Administración"),
-        ("Dirección Gral. de Administración", "Dirección General de Administración"),
-
-        # Becas variations
-        ("Dpto. Becas", "Departamento Becas"),
-        ("Departamento de Becas", "Departamento Becas"),
-        ("Dpto. Becas (FBCB)", "Departamento Becas"),
-
-        # Bedelía variations
-        ("Bedelia", "Bedelía"),
-        ("Bedelía (FBCB)", "Bedelía"),
-
-        # Biblioteca variations
-        ("Biblio.", "Biblioteca"),
-        ("Biblioteca (FBCB)", "Biblioteca"),
-
-        # Consejo Directivo variations
-        ("Consejo Dir.", "Consejo Directivo"),
-        ("C.D.", "Consejo Directivo"),
-        ("Consejo Directivo (FBCB)", "Consejo Directivo"),
-
-        # Rectorado variations
-        ("Rectorado UNL", "Rectorado"),
-        ("Rectorado (UNL)", "Rectorado"),
-
-        # Other variations
-        ("Bienestar Estudiantil", "Bienestar Universitario"),
-        ("Bienestar Universitario (FBCB)", "Bienestar Universitario"),
-    ])
+    @pytest.mark.parametrize(
+        "input_name,expected",
+        [
+            # Mesa de Entradas variations
+            ("Mesa de Entradas FBCB", "Mesa de Entradas"),
+            ("Mesa de Entradas FHUC", "Mesa de Entradas"),
+            ("Mesa de Entradas FADU", "Mesa de Entradas"),
+            ("Mesa de Entradas FCJS", "Mesa de Entradas"),
+            ("Mesa de Entradas FICH", "Mesa de Entradas"),
+            ("Mesa de Entradas FCE", "Mesa de Entradas"),
+            ("Mesa de Entradas FAVE", "Mesa de Entradas"),
+            ("Mesa de Entradas FRSF", "Mesa de Entradas"),
+            ("Mesa de Entradas CEN", "Mesa de Entradas"),
+            # Abbreviations
+            ("MDE FBCB", "Mesa de Entradas"),
+            ("MDE", "Mesa de Entradas"),
+            ("M.D.E.", "Mesa de Entradas"),
+            # Department variations
+            ("Dpto. Alumnos", "Departamento Alumnos"),
+            ("Dpto.Alumnos", "Departamento Alumnos"),
+            ("Depto. Alumnos", "Departamento Alumnos"),
+            ("Departamento de Alumnos", "Departamento Alumnos"),
+            ("Dpto Alumnos (FBCB)", "Departamento Alumnos"),
+            ("Dpto. Alumnos (FBCB)", "Departamento Alumnos"),
+            ("Sec. Académica", "Secretaría Académica"),
+            ("Secretaría Académica (FBCB)", "Secretaría Académica"),
+            ("Dir. Gral. Admin.", "Dirección General de Administración"),
+            ("Dirección Gral. de Administración", "Dirección General de Administración"),
+            # Becas variations
+            ("Dpto. Becas", "Departamento Becas"),
+            ("Departamento de Becas", "Departamento Becas"),
+            ("Dpto. Becas (FBCB)", "Departamento Becas"),
+            # Bedelía variations
+            ("Bedelia", "Bedelía"),
+            ("Bedelía (FBCB)", "Bedelía"),
+            # Biblioteca variations
+            ("Biblio.", "Biblioteca"),
+            ("Biblioteca (FBCB)", "Biblioteca"),
+            # Consejo Directivo variations
+            ("Consejo Dir.", "Consejo Directivo"),
+            ("C.D.", "Consejo Directivo"),
+            ("Consejo Directivo (FBCB)", "Consejo Directivo"),
+            # Rectorado variations
+            ("Rectorado UNL", "Rectorado"),
+            ("Rectorado (UNL)", "Rectorado"),
+            # Other variations
+            ("Bienestar Estudiantil", "Bienestar Universitario"),
+            ("Bienestar Universitario (FBCB)", "Bienestar Universitario"),
+        ],
+    )
     def test_explicit_overrides(self, rules, input_name, expected):
         """Test all explicit override mappings."""
         result = normalize(input_name, rules)
-        assert result == expected, f"Failed for '{input_name}': got '{result}', expected '{expected}'"
+        assert result == expected, (
+            f"Failed for '{input_name}': got '{result}', expected '{expected}'"
+        )
 
     def test_override_precedence_over_mesa_entradas_rule(self, rules):
         """Test explicit override takes precedence over mesa_entradas pattern rule."""
@@ -158,25 +154,29 @@ class TestExplicitOverride:
 # Rule 2: Mesa de Entradas Pattern Tests
 # ============================================================================
 
+
 class TestMesaEntradasRule:
     """Tests for mesa_entradas pattern rule."""
 
-    @pytest.mark.parametrize("input_name,expected", [
-        # These are handled by explicit_overrides (checked first)
-        ("Mesa de Entradas FBCB", "Mesa de Entradas"),
-        ("Mesa de Entradas FHUC", "Mesa de Entradas"),
-        ("Mesa de Entradas FADU", "Mesa de Entradas"),
-        ("Mesa de Entradas FCJS", "Mesa de Entradas"),
-        ("Mesa de Entradas FICH", "Mesa de Entradas"),
-        ("Mesa de Entradas FCE", "Mesa de Entradas"),
-        ("Mesa de Entradas FAVE", "Mesa de Entradas"),
-        ("Mesa de Entradas FRSF", "Mesa de Entradas"),
-        ("Mesa de Entradas CEN", "Mesa de Entradas"),
-        # These are handled by mesa_entradas pattern (not in explicit_overrides)
-        ("Mesa de Entradas ALGUNA", "Mesa de Entradas"),
-        ("Mesa de Entradas   MULTIPLE   SPACES", "Mesa de Entradas"),
-        ("Mesa de Entradas\tTAB", "Mesa de Entradas"),
-    ])
+    @pytest.mark.parametrize(
+        "input_name,expected",
+        [
+            # These are handled by explicit_overrides (checked first)
+            ("Mesa de Entradas FBCB", "Mesa de Entradas"),
+            ("Mesa de Entradas FHUC", "Mesa de Entradas"),
+            ("Mesa de Entradas FADU", "Mesa de Entradas"),
+            ("Mesa de Entradas FCJS", "Mesa de Entradas"),
+            ("Mesa de Entradas FICH", "Mesa de Entradas"),
+            ("Mesa de Entradas FCE", "Mesa de Entradas"),
+            ("Mesa de Entradas FAVE", "Mesa de Entradas"),
+            ("Mesa de Entradas FRSF", "Mesa de Entradas"),
+            ("Mesa de Entradas CEN", "Mesa de Entradas"),
+            # These are handled by mesa_entradas pattern (not in explicit_overrides)
+            ("Mesa de Entradas ALGUNA", "Mesa de Entradas"),
+            ("Mesa de Entradas   MULTIPLE   SPACES", "Mesa de Entradas"),
+            ("Mesa de Entradas\tTAB", "Mesa de Entradas"),
+        ],
+    )
     def test_mesa_entradas_pattern(self, rules, input_name, expected):
         """Test Mesa de Entradas pattern normalization."""
         result = normalize(input_name, rules)
@@ -193,14 +193,18 @@ class TestMesaEntradasRule:
 # Rule 3: Preserve MDE Tests
 # ============================================================================
 
+
 class TestPreserveMDE:
     """Tests for preserve_mde rule."""
 
-    @pytest.mark.parametrize("input_name", [
-        "Mesa de Entradas",
-        # Note: MDE and M.D.E. are caught by explicit_overrides first
-        # so they normalize to "Mesa de Entradas" instead of being preserved
-    ])
+    @pytest.mark.parametrize(
+        "input_name",
+        [
+            "Mesa de Entradas",
+            # Note: MDE and M.D.E. are caught by explicit_overrides first
+            # so they normalize to "Mesa de Entradas" instead of being preserved
+        ],
+    )
     def test_preserve_exact_mde_names(self, rules, input_name):
         """Test exact MDE names are preserved unchanged."""
         result = normalize(input_name, rules)
@@ -211,19 +215,29 @@ class TestPreserveMDE:
 # Rule 4: Strip Parentheses Tests
 # ============================================================================
 
+
 class TestStripParentheses:
     """Tests for strip_parentheses rule."""
 
-    @pytest.mark.parametrize("input_name,expected", [
-        ("Departamento Alumnos (FBCB)", "Departamento Alumnos"),
-        ("Secretaría Académica (FHUC)", "Secretaría Académica"),
-        ("Dirección General (FADU)", "Dirección General"),
-        ("Mesa de Entradas (FBCB)", "Mesa de Entradas"),  # Note: explicit override catches this first
-        ("Departamento (con paréntesis internos) (FBCB)", "Departamento (con paréntesis internos)"),
-        ("Oficina   (FBCB)  ", "Oficina"),
-        ("Dependencia (CODIGO123)", "Dependencia"),
-        ("Área (áéíóú)", "Área"),
-    ])
+    @pytest.mark.parametrize(
+        "input_name,expected",
+        [
+            ("Departamento Alumnos (FBCB)", "Departamento Alumnos"),
+            ("Secretaría Académica (FHUC)", "Secretaría Académica"),
+            ("Dirección General (FADU)", "Dirección General"),
+            (
+                "Mesa de Entradas (FBCB)",
+                "Mesa de Entradas",
+            ),  # Note: explicit override catches this first
+            (
+                "Departamento (con paréntesis internos) (FBCB)",
+                "Departamento (con paréntesis internos)",
+            ),
+            ("Oficina   (FBCB)  ", "Oficina"),
+            ("Dependencia (CODIGO123)", "Dependencia"),
+            ("Área (áéíóú)", "Área"),
+        ],
+    )
     def test_strip_trailing_parentheses(self, rules, input_name, expected):
         """Test trailing parenthetical content is removed."""
         result = normalize(input_name, rules)
@@ -232,6 +246,7 @@ class TestStripParentheses:
         strip_rule = rules.get_rule("strip_parentheses")
         if strip_rule and strip_rule.pattern:
             import re
+
             pattern = re.compile(strip_rule.pattern)
             direct_result = pattern.sub(strip_rule.replacement, input_name).strip()
             assert direct_result == expected
@@ -242,25 +257,32 @@ class TestStripParentheses:
         result = normalize(input_name, rules)
         # Should not strip "(Alumnos)" since it's not trailing
         # But may be caught by explicit override
-        assert result != "Departamento FBCB" or "Departamento (Alumnos) FBCB" in rules.explicit_overrides
+        assert (
+            result != "Departamento FBCB"
+            or "Departamento (Alumnos) FBCB" in rules.explicit_overrides
+        )
 
 
 # ============================================================================
 # Rule 5: Identity Fallback Tests
 # ============================================================================
 
+
 class TestIdentityFallback:
     """Tests for identity fallback rule."""
 
-    @pytest.mark.parametrize("input_name", [
-        "Dirección General de Administración",
-        "Secretaría de Investigación",
-        "Departamento de Posgrado",
-        "Oficina de Bienestar",
-        "Área de Sistemas",
-        "Unidad de Calidad",
-        "Cualquier Dependencia Desconocida",
-    ])
+    @pytest.mark.parametrize(
+        "input_name",
+        [
+            "Dirección General de Administración",
+            "Secretaría de Investigación",
+            "Departamento de Posgrado",
+            "Oficina de Bienestar",
+            "Área de Sistemas",
+            "Unidad de Calidad",
+            "Cualquier Dependencia Desconocida",
+        ],
+    )
     def test_identity_fallback(self, rules, input_name):
         """Test unknown names are returned unchanged."""
         result = normalize(input_name, rules)
@@ -286,41 +308,41 @@ class TestIdentityFallback:
 # Idempotency Tests
 # ============================================================================
 
+
 class TestIdempotency:
     """Tests for idempotency guarantee: normalize(normalize(x)) == normalize(x)."""
 
-    @pytest.mark.parametrize("input_name", [
-        # Explicit overrides
-        "Mesa de Entradas FBCB",
-        "Dpto. Alumnos",
-        "Sec. Académica",
-        "Dpto. Becas (FBCB)",
-        "Bedelia",
-        "Biblio.",
-        "Consejo Dir.",
-        "Rectorado UNL",
-        "Bienestar Estudiantil",
-
-        # Mesa de Entradas pattern
-        "Mesa de Entradas FHUC",
-        "Mesa de Entradas ALGUNA",
-
-        # Preserve MDE
-        "Mesa de Entradas",
-        "MDE",
-        "M.D.E.",
-
-        # Strip parentheses
-        "Departamento Alumnos (FBCB)",
-        "Secretaría (FHUC)",
-
-        # Identity fallback
-        "Dirección General",
-        "Secretaría Académica",
-        "Departamento Desconocido",
-        "  Con espacios  ",
-        "",
-    ])
+    @pytest.mark.parametrize(
+        "input_name",
+        [
+            # Explicit overrides
+            "Mesa de Entradas FBCB",
+            "Dpto. Alumnos",
+            "Sec. Académica",
+            "Dpto. Becas (FBCB)",
+            "Bedelia",
+            "Biblio.",
+            "Consejo Dir.",
+            "Rectorado UNL",
+            "Bienestar Estudiantil",
+            # Mesa de Entradas pattern
+            "Mesa de Entradas FHUC",
+            "Mesa de Entradas ALGUNA",
+            # Preserve MDE
+            "Mesa de Entradas",
+            "MDE",
+            "M.D.E.",
+            # Strip parentheses
+            "Departamento Alumnos (FBCB)",
+            "Secretaría (FHUC)",
+            # Identity fallback
+            "Dirección General",
+            "Secretaría Académica",
+            "Departamento Desconocido",
+            "  Con espacios  ",
+            "",
+        ],
+    )
     def test_idempotency(self, rules, input_name):
         """Test normalize is idempotent for all input types."""
         first = normalize(input_name, rules)
@@ -331,6 +353,7 @@ class TestIdempotency:
 # ============================================================================
 # Batch Normalization Tests
 # ============================================================================
+
 
 class TestBatchNormalization:
     """Tests for normalize_batch function."""
@@ -343,7 +366,8 @@ class TestBatchNormalization:
             "Secretaría Académica",
             "Departamento Desconocido",
         ]
-        from src.scraper.normalizer import normalize_batch
+        from src.sume_scraper.normalizer import normalize_batch
+
         results = normalize_batch(inputs, rules)
         expected = [
             "Mesa de Entradas",
@@ -355,7 +379,8 @@ class TestBatchNormalization:
 
     def test_normalize_batch_empty(self, rules):
         """Test empty batch returns empty list."""
-        from src.scraper.normalizer import normalize_batch
+        from src.sume_scraper.normalizer import normalize_batch
+
         assert normalize_batch([], rules) == []
 
 
@@ -363,12 +388,14 @@ class TestBatchNormalization:
 # Load Rules Tests
 # ============================================================================
 
+
 class TestLoadRules:
     """Tests for load_rules function."""
 
     def test_load_rules_from_file(self):
         """Test loading rules from YAML file."""
         from pathlib import Path
+
         rules = load_rules(Path("config/normalization_rules.yaml"))
 
         assert isinstance(rules, NormalizationRules)
@@ -379,14 +406,22 @@ class TestLoadRules:
     def test_rule_types_present(self):
         """Test all 5 rule types are present."""
         from pathlib import Path
+
         rules = load_rules(Path("config/normalization_rules.yaml"))
 
         rule_types = {r.type for r in rules.rules}
-        assert rule_types == {"explicit_override", "mesa_entradas", "preserve_mde", "strip_parentheses", "identity"}
+        assert rule_types == {
+            "explicit_override",
+            "mesa_entradas",
+            "preserve_mde",
+            "strip_parentheses",
+            "identity",
+        }
 
     def test_explicit_override_rule_first(self):
         """Test explicit_override rule is first in list."""
         from pathlib import Path
+
         rules = load_rules(Path("config/normalization_rules.yaml"))
         assert rules.rules[0].type == "explicit_override"
 
@@ -400,6 +435,7 @@ class TestLoadRules:
 # ============================================================================
 # Edge Cases and Regression Tests
 # ============================================================================
+
 
 class TestEdgeCases:
     """Edge case and regression tests."""
@@ -445,6 +481,7 @@ class TestEdgeCases:
 # Integration with Real Config
 # ============================================================================
 
+
 class TestRealConfigIntegration:
     """Tests using the actual production config file."""
 
@@ -452,7 +489,9 @@ class TestRealConfigIntegration:
         """Verify all explicit overrides in config produce expected results."""
         for original, expected in rules.explicit_overrides.items():
             result = normalize(original, rules)
-            assert result == expected, f"Override failed for '{original}': got '{result}', expected '{expected}'"
+            assert result == expected, (
+                f"Override failed for '{original}': got '{result}', expected '{expected}'"
+            )
 
     def test_rule_order_correct(self, rules):
         """Test rules are applied in correct precedence order."""
@@ -476,6 +515,7 @@ class TestRealConfigIntegration:
 # ============================================================================
 # Performance Tests (optional)
 # ============================================================================
+
 
 class TestPerformance:
     """Basic performance sanity checks."""
@@ -503,6 +543,7 @@ class TestPerformance:
 # ============================================================================
 # Rule Configuration Tests
 # ============================================================================
+
 
 class TestRuleConfiguration:
     """Tests for NormalizationRule and NormalizationRules dataclasses."""

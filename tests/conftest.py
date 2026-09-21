@@ -8,22 +8,22 @@ Provides:
 - Test settings override
 """
 
+import sqlite3
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock
 
 import pytest
-import sqlite3
 
-from src.config import Settings, DatabaseConfig
-from src.database.connection import get_connection, close_connection, set_connection_factory
+from src.config import DatabaseConfig, Settings
+from src.database.connection import close_connection, get_connection, set_connection_factory
 from src.database.schema import INIT_SQL
-
 
 # ============================================================================
 # Test Settings
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def test_settings() -> Settings:
@@ -47,6 +47,7 @@ def override_settings(test_settings: Settings, monkeypatch: pytest.MonkeyPatch) 
     """Override global settings for all tests."""
     # Patch the get_settings function to return test settings
     import src.config
+
     monkeypatch.setattr(src.config, "get_settings", lambda: test_settings)
     monkeypatch.setattr(src.config, "_settings", test_settings)
 
@@ -54,6 +55,7 @@ def override_settings(test_settings: Settings, monkeypatch: pytest.MonkeyPatch) 
 # ============================================================================
 # Database Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def temp_db_path() -> Generator[Path, None, None]:
@@ -74,6 +76,7 @@ def db_connection(temp_db_path: Path) -> Generator[sqlite3.Connection, None, Non
     Creates a new connection to a temporary database with schema initialized.
     The connection is closed after the test.
     """
+
     def factory() -> sqlite3.Connection:
         conn = sqlite3.connect(temp_db_path, check_same_thread=False, timeout=30.0)
         conn.execute("PRAGMA journal_mode=WAL;")
@@ -106,6 +109,7 @@ def initialized_db(db_connection: sqlite3.Connection) -> sqlite3.Connection:
 # ============================================================================
 # Sample Data Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_expediente() -> dict:
@@ -232,6 +236,7 @@ def sample_html_detail() -> str:
 # Mock Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def mock_http_session() -> MagicMock:
     """Create a mock requests.Session for testing HTTP client."""
@@ -257,6 +262,7 @@ def mock_response_factory():
         response.raise_for_status = MagicMock()
         if status_code >= 400:
             from requests.exceptions import HTTPError
+
             response.raise_for_status.side_effect = HTTPError(f"{status_code} Error")
         return response
 
@@ -266,6 +272,7 @@ def mock_response_factory():
 # ============================================================================
 # Test Utilities
 # ============================================================================
+
 
 def insert_test_expediente(conn: sqlite3.Connection, expediente: dict) -> int:
     """Helper to insert a test expediente and return its ID."""
@@ -288,7 +295,9 @@ def insert_test_expediente(conn: sqlite3.Connection, expediente: dict) -> int:
     return cursor.lastrowid
 
 
-def insert_test_movimientos(conn: sqlite3.Connection, expediente_id: int, movimientos: list[dict]) -> None:
+def insert_test_movimientos(
+    conn: sqlite3.Connection, expediente_id: int, movimientos: list[dict]
+) -> None:
     """Helper to insert test movimientos for an expediente."""
     for mov in movimientos:
         conn.execute(
@@ -304,6 +313,7 @@ def insert_test_movimientos(conn: sqlite3.Connection, expediente_id: int, movimi
 # ============================================================================
 # Pytest Configuration
 # ============================================================================
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest with custom markers."""

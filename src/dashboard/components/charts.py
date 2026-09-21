@@ -10,40 +10,34 @@ Provides consistent styling across all dashboard pages:
 """
 
 import json
-from typing import Optional
 
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
-
+import plotly.graph_objects as go
 
 # Color palette - FBCB institutional colors
 COLORS = {
     # FBCB institutional green (Pantone 355C)
-    "modal": "#00A94F",       # Green for modal circuits
-    "fbcb": "#00A94F",        # Primary FBCB green
+    "modal": "#00A94F",  # Green for modal circuits
+    "fbcb": "#00A94F",  # Primary FBCB green
     "fbcb_hover": "#008C41",  # FBCB green hover
     "fbcb_light": "#b2e8c4",  # FBCB green light
-    "fbcb_50": "#f0fdf4",     # FBCB green 50 (background)
-    "fbcb_100": "#dcfce7",    # FBCB green 100
-
+    "fbcb_50": "#f0fdf4",  # FBCB green 50 (background)
+    "fbcb_100": "#dcfce7",  # FBCB green 100
     # UNL institutional colors
-    "unl": "#0088AA",         # UNL turquoise (Pantone 314C)
-    "unl_dark": "#244C5A",    # UNL complement (Pantone 7477C)
-
+    "unl": "#0088AA",  # UNL turquoise (Pantone 314C)
+    "unl_dark": "#244C5A",  # UNL complement (Pantone 7477C)
     # Semantic colors
-    "atypical": "#E65100",    # Orange for atypical/outlier circuits
-    "primary": "#00A94F",     # Primary = FBCB green
-    "secondary": "#575756",   # Gray (accompanying gray K:80)
+    "atypical": "#E65100",  # Orange for atypical/outlier circuits
+    "primary": "#00A94F",  # Primary = FBCB green
+    "secondary": "#575756",  # Gray (accompanying gray K:80)
     "background": "#F5F5F5",  # Light gray background
     "white": "#FFFFFF",
     "text": "#212121",
     "grid": "#E0E0E0",
-
     # KPI card colors
-    "kpi_green": "#00A94F",   # FBCB green
-    "kpi_blue": "#0088AA",    # UNL turquoise
+    "kpi_green": "#00A94F",  # FBCB green
+    "kpi_blue": "#0088AA",  # UNL turquoise
     "kpi_orange": "#E65100",  # Orange (outliers)
     "kpi_purple": "#7B1FA2",  # Purple (accent)
 }
@@ -51,7 +45,10 @@ COLORS = {
 # Common layout settings - matching FBCB institutional style
 # NOTE: title is NOT included here because apply_default_layout handles it explicitly
 DEFAULT_LAYOUT = {
-    "font": {"family": "Montserrat, Lato, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "color": COLORS["text"]},
+    "font": {
+        "family": "Montserrat, Lato, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        "color": COLORS["text"],
+    },
     "plot_bgcolor": COLORS["white"],
     "paper_bgcolor": COLORS["white"],
     "margin": {"l": 60, "r": 30, "t": 60, "b": 50},
@@ -61,22 +58,38 @@ DEFAULT_LAYOUT = {
 }
 
 
-def apply_default_layout(fig: go.Figure, title: str = "", height: int = 400,
-                         show_legend: bool = True, **kwargs) -> go.Figure:
+def apply_default_layout(
+    fig: go.Figure, title: str = "", height: int = 400, show_legend: bool = True, **kwargs
+) -> go.Figure:
     """Apply default layout styling to a figure - FBCB institutional style."""
     fig.update_layout(
-        title={"text": title, "font": {"family": "Montserrat, sans-serif", "size": 16, "color": COLORS["text"]}, "x": 0.02, "xanchor": "left"},
+        title={
+            "text": title,
+            "font": {"family": "Montserrat, sans-serif", "size": 16, "color": COLORS["text"]},
+            "x": 0.02,
+            "xanchor": "left",
+        },
         height=height,
         showlegend=show_legend,
-        legend={"bgcolor": "rgba(255,255,255,0.9)", "bordercolor": COLORS["grid"], "borderwidth": 1, "font": {"family": "Lato, sans-serif"}},
+        legend={
+            "bgcolor": "rgba(255,255,255,0.9)",
+            "bordercolor": COLORS["grid"],
+            "borderwidth": 1,
+            "font": {"family": "Lato, sans-serif"},
+        },
         **{k: v for k, v in DEFAULT_LAYOUT.items()},
         **kwargs,
     )
     return fig
 
 
-def kpi_card(label: str, value: str | int | float, delta: Optional[str] = None,
-             delta_color: str = "normal", help_text: Optional[str] = None) -> None:
+def kpi_card(
+    label: str,
+    value: str | int | float,
+    delta: str | None = None,
+    delta_color: str = "normal",
+    help_text: str | None = None,
+) -> None:
     """
     Render a KPI card using Streamlit's metric.
 
@@ -88,16 +101,22 @@ def kpi_card(label: str, value: str | int | float, delta: Optional[str] = None,
         help_text: Optional tooltip text.
     """
     import streamlit as st
+
     st.metric(label=label, value=value, delta=delta, delta_color=delta_color, help=help_text)
 
 
-def bar_chart_horizontal(df: pd.DataFrame, x: str, y: str, title: str = "",
-                         color_col: Optional[str] = None,
-                         color_map: Optional[dict] = None,
-                         height: int = 400,
-                         text_auto: bool = True,
-                         hover_data: Optional[list] = None,
-                         max_label_length: int = 25) -> go.Figure:
+def bar_chart_horizontal(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    title: str = "",
+    color_col: str | None = None,
+    color_map: dict | None = None,
+    height: int = 400,
+    text_auto: bool = True,
+    hover_data: list | None = None,
+    max_label_length: int = 25,
+) -> go.Figure:
     """
     Create a horizontal bar chart.
 
@@ -141,10 +160,15 @@ def bar_chart_horizontal(df: pd.DataFrame, x: str, y: str, title: str = "",
     return apply_default_layout(fig, title=title, height=height)
 
 
-def line_chart_monthly(df: pd.DataFrame, date_col: str, value_col: str,
-                       title: str = "", cumulative_col: Optional[str] = None,
-                       height: int = 400,
-                       show_markers: bool = True) -> go.Figure:
+def line_chart_monthly(
+    df: pd.DataFrame,
+    date_col: str,
+    value_col: str,
+    title: str = "",
+    cumulative_col: str | None = None,
+    height: int = 400,
+    show_markers: bool = True,
+) -> go.Figure:
     """
     Create a monthly trend line chart with optional cumulative line.
 
@@ -163,28 +187,32 @@ def line_chart_monthly(df: pd.DataFrame, date_col: str, value_col: str,
     fig = go.Figure()
 
     # Main count line
-    fig.add_trace(go.Scatter(
-        x=df[date_col],
-        y=df[value_col],
-        mode="lines+markers" if show_markers else "lines",
-        name="Cantidad mensual",
-        line={"color": COLORS["primary"], "width": 3},
-        marker={"size": 8, "color": COLORS["primary"]},
-        hovertemplate="<b>%{x}</b><br>Expedientes: %{y}<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=df[date_col],
+            y=df[value_col],
+            mode="lines+markers" if show_markers else "lines",
+            name="Cantidad mensual",
+            line={"color": COLORS["primary"], "width": 3},
+            marker={"size": 8, "color": COLORS["primary"]},
+            hovertemplate="<b>%{x}</b><br>Expedientes: %{y}<extra></extra>",
+        )
+    )
 
     # Cumulative line if provided
     if cumulative_col and cumulative_col in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df[date_col],
-            y=df[cumulative_col],
-            mode="lines+markers" if show_markers else "lines",
-            name="Acumulado",
-            line={"color": COLORS["secondary"], "width": 2, "dash": "dot"},
-            marker={"size": 6, "color": COLORS["secondary"]},
-            hovertemplate="<b>%{x}</b><br>Acumulado: %{y}<extra></extra>",
-            yaxis="y2",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df[date_col],
+                y=df[cumulative_col],
+                mode="lines+markers" if show_markers else "lines",
+                name="Acumulado",
+                line={"color": COLORS["secondary"], "width": 2, "dash": "dot"},
+                marker={"size": 6, "color": COLORS["secondary"]},
+                hovertemplate="<b>%{x}</b><br>Acumulado: %{y}<extra></extra>",
+                yaxis="y2",
+            )
+        )
 
         fig.update_layout(
             yaxis2={"title": "Acumulado", "overlaying": "y", "side": "right", "showgrid": False},
@@ -196,11 +224,15 @@ def line_chart_monthly(df: pd.DataFrame, date_col: str, value_col: str,
     return apply_default_layout(fig, title=title, height=height)
 
 
-def histogram_steps(df: pd.DataFrame, bins: int = 20, title: str = "",
-                    mean_line: Optional[float] = None,
-                    median_line: Optional[float] = None,
-                    mode_line: Optional[float] = None,
-                    height: int = 400) -> go.Figure:
+def histogram_steps(
+    df: pd.DataFrame,
+    bins: int = 20,
+    title: str = "",
+    mean_line: float | None = None,
+    median_line: float | None = None,
+    mode_line: float | None = None,
+    height: int = 400,
+) -> go.Figure:
     """
     Create a histogram of step counts with optional mean/median/mode lines.
 
@@ -222,13 +254,15 @@ def histogram_steps(df: pd.DataFrame, bins: int = 20, title: str = "",
 
     fig = go.Figure()
 
-    fig.add_trace(go.Histogram(
-        x=step_counts,
-        nbinsx=bins,
-        name="Distribución",
-        marker={"color": COLORS["primary"], "opacity": 0.7},
-        hovertemplate="Pasos: %{x}<br>Frecuencia: %{y}<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Histogram(
+            x=step_counts,
+            nbinsx=bins,
+            name="Distribución",
+            marker={"color": COLORS["primary"], "opacity": 0.7},
+            hovertemplate="Pasos: %{x}<br>Frecuencia: %{y}<extra></extra>",
+        )
+    )
 
     # Add vertical lines for statistics
     line_configs = [
@@ -239,8 +273,7 @@ def histogram_steps(df: pd.DataFrame, bins: int = 20, title: str = "",
 
     # Check if mean and median are very close (< 1.5 apart) to avoid overlap
     values_close = (
-        mean_line is not None and median_line is not None and
-        abs(mean_line - median_line) < 1.5
+        mean_line is not None and median_line is not None and abs(mean_line - median_line) < 1.5
     )
 
     for i, (value, name, color, dash) in enumerate(line_configs):
@@ -264,11 +297,16 @@ def histogram_steps(df: pd.DataFrame, bins: int = 20, title: str = "",
     return apply_default_layout(fig, title=title, height=height, show_legend=False)
 
 
-def boxplot_permanence(df: pd.DataFrame, x: str, y: str, title: str = "",
-                       height: int = 500,
-                       points: str = "outliers",
-                       notched: bool = False,
-                       max_label_length: int = 22) -> go.Figure:
+def boxplot_permanence(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    title: str = "",
+    height: int = 500,
+    points: str = "outliers",
+    notched: bool = False,
+    max_label_length: int = 22,
+) -> go.Figure:
     """
     Create a boxplot of permanence days by dependencia with truncated labels.
 
@@ -288,7 +326,9 @@ def boxplot_permanence(df: pd.DataFrame, x: str, y: str, title: str = "",
     # Truncate long labels for readability
     display_df = df.copy()
     display_df[x] = display_df[x].apply(
-        lambda label: label[:max_label_length] + "..." if len(str(label)) > max_label_length else label
+        lambda label: (
+            label[:max_label_length] + "..." if len(str(label)) > max_label_length else label
+        )
     )
 
     fig = px.box(
@@ -313,10 +353,14 @@ def boxplot_permanence(df: pd.DataFrame, x: str, y: str, title: str = "",
     return apply_default_layout(fig, title=title, height=height, show_legend=False)
 
 
-def sankey_circuit(circuit_json: str, counts: list[int], title: str = "",
-                   height: int = 500,
-                   modal_color: str = COLORS["modal"],
-                   atypical_color: str = COLORS["atypical"]) -> go.Figure:
+def sankey_circuit(
+    circuit_json: str,
+    counts: list[int],
+    title: str = "",
+    height: int = 500,
+    modal_color: str = COLORS["modal"],
+    atypical_color: str = COLORS["atypical"],
+) -> go.Figure:
     """
     Create a Sankey diagram for a circuit.
 
@@ -338,15 +382,20 @@ def sankey_circuit(circuit_json: str, counts: list[int], title: str = "",
 
     if len(circuit) < 2:
         fig = go.Figure()
-        fig.add_annotation(text="Circuito con menos de 2 pasos", x=0.5, y=0.5,
-                          showarrow=False, font={"size": 16, "color": COLORS["secondary"]})
+        fig.add_annotation(
+            text="Circuito con menos de 2 pasos",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font={"size": 16, "color": COLORS["secondary"]},
+        )
         return apply_default_layout(fig, title=title, height=height, show_legend=False)
 
     # Build nodes and links
     nodes = []
     node_indices = {}
 
-    for i, step in enumerate(circuit):
+    for step in circuit:
         if step not in node_indices:
             node_indices[step] = len(nodes)
             nodes.append(step)
@@ -375,31 +424,35 @@ def sankey_circuit(circuit_json: str, counts: list[int], title: str = "",
         else:
             node_colors.append(COLORS["primary"])
 
-    fig = go.Figure(data=[go.Sankey(
-        arrangement="snap",
-        node={
-            "label": nodes,
-            "color": node_colors,
-            "pad": 20,
-            "thickness": 30,
-            "line": {"color": COLORS["grid"], "width": 1},
-            "hovertemplate": "<b>%{label}</b><br>Total: %{value}<extra></extra>",
-        },
-        link={
-            "source": source,
-            "target": target,
-            "value": value,
-            "color": link_colors,
-            "hovertemplate": "<b>%{source.label}</b> → <b>%{target.label}</b><br>Expedientes: %{value}<extra></extra>",
-        },
-    )])
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node={
+                    "label": nodes,
+                    "color": node_colors,
+                    "pad": 20,
+                    "thickness": 30,
+                    "line": {"color": COLORS["grid"], "width": 1},
+                    "hovertemplate": "<b>%{label}</b><br>Total: %{value}<extra></extra>",
+                },
+                link={
+                    "source": source,
+                    "target": target,
+                    "value": value,
+                    "color": link_colors,
+                    "hovertemplate": "<b>%{source.label}</b> → <b>%{target.label}</b><br>Expedientes: %{value}<extra></extra>",
+                },
+            )
+        ]
+    )
 
     return apply_default_layout(fig, title=title, height=height, show_legend=False)
 
 
-def parallel_sets(circuits_df: pd.DataFrame, title: str = "",
-                  height: int = 500,
-                  max_circuits: int = 10) -> go.Figure:
+def parallel_sets(
+    circuits_df: pd.DataFrame, title: str = "", height: int = 500, max_circuits: int = 10
+) -> go.Figure:
     """
     Create a parallel sets diagram for comparing multiple circuits.
 
@@ -429,8 +482,13 @@ def parallel_sets(circuits_df: pd.DataFrame, title: str = "",
 
     if max_steps < 2:
         fig = go.Figure()
-        fig.add_annotation(text="Datos insuficientes para diagrama de conjuntos paralelos",
-                          x=0.5, y=0.5, showarrow=False, font={"size": 16, "color": COLORS["secondary"]})
+        fig.add_annotation(
+            text="Datos insuficientes para diagrama de conjuntos paralelos",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font={"size": 16, "color": COLORS["secondary"]},
+        )
         return apply_default_layout(fig, title=title, height=height, show_legend=False)
 
     # Build parallel coordinates style visualization
@@ -451,29 +509,33 @@ def parallel_sets(circuits_df: pd.DataFrame, title: str = "",
 
         for step_idx in range(len(circuit) - 1):
             if step_idx + 1 < len(circuit):
-                fig.add_trace(go.Scatter(
-                    x=[step_idx, step_idx + 1],
-                    y=[circuit[step_idx], circuit[step_idx + 1]],
-                    mode="lines",
-                    line={"color": color, "width": width},
-                    showlegend=False,
-                    hoverinfo="skip",
-                    opacity=opacity,
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=[step_idx, step_idx + 1],
+                        y=[circuit[step_idx], circuit[step_idx + 1]],
+                        mode="lines",
+                        line={"color": color, "width": width},
+                        showlegend=False,
+                        hoverinfo="skip",
+                        opacity=opacity,
+                    )
+                )
 
         # Add node markers
         for step_idx, step_name in enumerate(circuit):
-            fig.add_trace(go.Scatter(
-                x=[step_idx],
-                y=[step_name],
-                mode="markers+text",
-                marker={"size": 12, "color": color, "opacity": opacity},
-                text=[f"{freq}"],
-                textposition="top center",
-                textfont={"size": 10, "color": color},
-                showlegend=False,
-                hovertemplate=f"<b>{step_name}</b><br>Frecuencia: {freq}<extra></extra>",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=[step_idx],
+                    y=[step_name],
+                    mode="markers+text",
+                    marker={"size": 12, "color": color, "opacity": opacity},
+                    text=[f"{freq}"],
+                    textposition="top center",
+                    textfont={"size": 10, "color": color},
+                    showlegend=False,
+                    hovertemplate=f"<b>{step_name}</b><br>Frecuencia: {freq}<extra></extra>",
+                )
+            )
 
     fig.update_xaxes(
         title="Paso del circuito",
@@ -486,8 +548,9 @@ def parallel_sets(circuits_df: pd.DataFrame, title: str = "",
     return apply_default_layout(fig, title=title, height=height, show_legend=False)
 
 
-def circuit_frequency_table(circuits_df: pd.DataFrame, title: str = "",
-                            height: int = 400) -> go.Figure:
+def circuit_frequency_table(
+    circuits_df: pd.DataFrame, title: str = "", height: int = 400
+) -> go.Figure:
     """
     Create a formatted table for circuit frequencies.
 
@@ -525,27 +588,31 @@ def circuit_frequency_table(circuits_df: pd.DataFrame, title: str = "",
         else:
             row_colors.append(COLORS["white"])
 
-    fig = go.Figure(data=[go.Table(
-        header={
-            "values": ["Circuito", "Frecuencia", "%", "Es Modal"],
-            "fill_color": COLORS["primary"],
-            "font": {"color": COLORS["white"], "size": 12},
-            "align": ["left", "center", "center", "center"],
-            "height": 35,
-        },
-        cells={
-            "values": [
-                display_df["Circuito"],
-                display_df["Frecuencia"],
-                display_df["%"],
-                display_df["Modal"],
-            ],
-            "fill_color": [row_colors],
-            "font": {"color": COLORS["text"], "size": 11},
-            "align": ["left", "center", "center", "center"],
-            "height": 30,
-        },
-    )])
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header={
+                    "values": ["Circuito", "Frecuencia", "%", "Es Modal"],
+                    "fill_color": COLORS["primary"],
+                    "font": {"color": COLORS["white"], "size": 12},
+                    "align": ["left", "center", "center", "center"],
+                    "height": 35,
+                },
+                cells={
+                    "values": [
+                        display_df["Circuito"],
+                        display_df["Frecuencia"],
+                        display_df["%"],
+                        display_df["Modal"],
+                    ],
+                    "fill_color": [row_colors],
+                    "font": {"color": COLORS["text"], "size": 11},
+                    "align": ["left", "center", "center", "center"],
+                    "height": 30,
+                },
+            )
+        ]
+    )
 
     fig.update_layout(
         title={"text": title, "font": {"size": 16, "color": COLORS["text"]}, "x": 0.02},
@@ -556,10 +623,13 @@ def circuit_frequency_table(circuits_df: pd.DataFrame, title: str = "",
     return fig
 
 
-def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
-                           top_n: int = 10,
-                           height: int = 400,
-                           max_label_length: int = 22) -> go.Figure:
+def dependency_traffic_bar(
+    df: pd.DataFrame,
+    title: str = "",
+    top_n: int = 10,
+    height: int = 400,
+    max_label_length: int = 22,
+) -> go.Figure:
     """
     Create horizontal bar chart for top N dependencias by traffic.
 
@@ -590,8 +660,7 @@ def dependency_traffic_bar(df: pd.DataFrame, title: str = "",
     )
 
 
-def concept_distribution_pie(df: pd.DataFrame, title: str = "",
-                             height: int = 400) -> go.Figure:
+def concept_distribution_pie(df: pd.DataFrame, title: str = "", height: int = 400) -> go.Figure:
     """
     Create a pie chart for concept distribution.
 
@@ -638,7 +707,7 @@ def render_kpi_row(kpis: list[dict]) -> None:
     import streamlit as st
 
     cols = st.columns(len(kpis))
-    for col, kpi in zip(cols, kpis):
+    for col, kpi in zip(cols, kpis, strict=False):
         with col:
             st.metric(
                 label=kpi["label"],

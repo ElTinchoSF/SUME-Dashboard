@@ -5,8 +5,8 @@ Initializes page config, renders sidebar with global filters,
 and routes to the selected page.
 """
 
-import sys
 import base64
+import sys
 from pathlib import Path
 
 # Add project root to Python path
@@ -14,15 +14,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 
-from src.dashboard.logging_config import setup_logging
-from src.dashboard.errors import render_page_error
-from src.dashboard.validation import validate_database
 from src.dashboard.auth import require_auth
 from src.dashboard.components.filters import render_global_filters_sidebar
-from src.dashboard.pages.overview import render_overview_page
-from src.dashboard.pages.conceptos import render_conceptos_page
+from src.dashboard.errors import render_page_error
+from src.dashboard.logging_config import setup_logging
+from src.dashboard.metrics import track_error, track_page_view
 from src.dashboard.pages.circuitos import render_circuitos_page
+from src.dashboard.pages.conceptos import render_conceptos_page
+from src.dashboard.pages.overview import render_overview_page
 from src.dashboard.pages.reportes import render_reportes_page
+from src.dashboard.validation import validate_database
 
 # Initialize logging on import
 logger = setup_logging()
@@ -40,10 +41,7 @@ def main() -> None:
 
     # Set wide layout to maximize content area
     st.set_page_config(
-        page_title="SUME Dashboard",
-        page_icon="📊",
-        layout="wide",
-        initial_sidebar_state="locked"
+        page_title="SUME Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="locked"
     )
 
     # Load logo once for reuse
@@ -300,7 +298,8 @@ def main() -> None:
     """)
 
     # Header content
-    st.markdown(f"""
+    st.markdown(
+        f"""
         <div class="toolbar-header">
             <img src="data:image/png;base64,{logo_b64}" alt="FBCB-UNL Logo">
             <div class="header-text">
@@ -312,7 +311,9 @@ def main() -> None:
                 <div>Facultad de Bioquímica y Ciencias Biológicas</div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # Sidebar
     with st.sidebar:
@@ -352,6 +353,9 @@ def main() -> None:
 
     # Render selected page
     try:
+        import time
+
+        page_start = time.time()
         if page == "📈 Vista General":
             render_overview_page(filters)
         elif page == "📋 Análisis por Concepto":
@@ -360,11 +364,15 @@ def main() -> None:
             render_circuitos_page(filters)
         elif page == "📑 Reportes ISO 9001":
             render_reportes_page(filters)
+        load_ms = (time.time() - page_start) * 1000
+        track_page_view(page, load_ms)
     except Exception as e:
+        track_error(page, e)
         render_page_error(e, page)
 
     # Institutional footer
-    st.markdown("""
+    st.markdown(
+        """
         <div class="institution-footer">
             <div style="margin-bottom: 0.5rem;">
                 <strong>SUME Dashboard v1.0.0</strong> | Mesa de Entradas FBCB-UNL
@@ -373,7 +381,9 @@ def main() -> None:
                 Universidad Nacional del Litoral | Facultad de Bioquímica y Ciencias Biológicas
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":

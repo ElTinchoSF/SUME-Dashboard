@@ -8,34 +8,36 @@ Deep-dive analysis for a selected concepto including:
 """
 
 import json
-import streamlit as st
-import pandas as pd
 
-from src.dashboard.data import (
-    load_circuitos,
-    load_step_stats,
-    load_permanence,
-    load_conceptos,
-    load_asuntos,
-    load_asunto_distribution,
-    ensure_asuntos_populated,
-    FilterState,
-    _compute_step_stats_from_freq,
-)
+import pandas as pd
+import streamlit as st
+
 from src.dashboard.components.charts import (
-    histogram_steps,
+    bar_chart_horizontal,
     boxplot_permanence,
     circuit_frequency_table,
-    bar_chart_horizontal,
-    apply_default_layout,
-    COLORS,
+    histogram_steps,
 )
 from src.dashboard.components.filters import render_filter_summary
+from src.dashboard.data import (
+    FilterState,
+    _compute_step_stats_from_freq,
+    ensure_asuntos_populated,
+    load_asunto_distribution,
+    load_asuntos,
+    load_circuitos,
+    load_conceptos,
+    load_permanence,
+    load_step_stats,
+)
 
 
 def render_conceptos_page(filters: FilterState) -> None:
     """Render the Conceptos analysis page."""
     st.header("📋 Análisis por Concepto")
+    st.caption(
+        "Análisis profundo: histograma de pasos, tiempos de permanencia, distribución de asuntos y tabla de frecuencias de circuitos."
+    )
     render_filter_summary(filters)
 
     # Load available conceptos
@@ -115,7 +117,9 @@ def render_conceptos_page(filters: FilterState) -> None:
     if not asuntos_dist_df.empty:
         total_asuntos = asuntos_dist_df["total_expedientes"].sum()
         asuntos_dist_df = asuntos_dist_df.copy()
-        asuntos_dist_df["porcentaje"] = (asuntos_dist_df["total_expedientes"] / total_asuntos * 100).round(1)
+        asuntos_dist_df["porcentaje"] = (
+            asuntos_dist_df["total_expedientes"] / total_asuntos * 100
+        ).round(1)
 
         fig = bar_chart_horizontal(
             asuntos_dist_df,
@@ -148,7 +152,9 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     display_df["Circuito"] = display_df["circuito_json"].apply(format_circuit)
     display_df["Frecuencia"] = display_df["frecuencia"]
-    display_df["% del total"] = (display_df["frecuencia"] / display_df["frecuencia"].sum() * 100).round(1)
+    display_df["% del total"] = (
+        display_df["frecuencia"] / display_df["frecuencia"].sum() * 100
+    ).round(1)
     display_df["Es Modal"] = display_df["es_mas_frecuente"].apply(lambda x: "✅ Sí" if x else "No")
 
     # Interactive frequency table with row selection
@@ -166,7 +172,9 @@ def render_conceptos_page(filters: FilterState) -> None:
         key="conceptos_freq_table",
     )
 
-    fig_table = circuit_frequency_table(circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35))
+    fig_table = circuit_frequency_table(
+        circuitos_df, title="", height=min(400, 100 + len(circuitos_df) * 35)
+    )
     st.plotly_chart(fig_table, width="stretch")
 
     # Check if a circuit was selected — filter step stats accordingly
@@ -214,13 +222,13 @@ def render_conceptos_page(filters: FilterState) -> None:
 
         st.caption(f"""
         **Estadísticas de pasos:**
-        - Mínimo: {int(stats_row.get('min_steps', 0))} pasos
-        - Máximo: {int(stats_row.get('max_steps', 0))} pasos
+        - Mínimo: {int(stats_row.get("min_steps", 0))} pasos
+        - Máximo: {int(stats_row.get("max_steps", 0))} pasos
         - Media: {mean_steps:.1f} pasos
         - Mediana: {median_steps:.1f} pasos
         - Moda: {int(mode_steps)} pasos
-        - Desv. estándar: {stats_row.get('std_steps', 0):.1f} pasos
-        - Total expedientes: {int(stats_row.get('total_expedientes', 0)):,}
+        - Desv. estándar: {stats_row.get("std_steps", 0):.1f} pasos
+        - Total expedientes: {int(stats_row.get("total_expedientes", 0)):,}
         """)
     else:
         st.info("No hay datos de pasos para mostrar.")
@@ -234,9 +242,9 @@ def render_conceptos_page(filters: FilterState) -> None:
 
     if not permanence_df.empty:
         valid_permanence = permanence_df[
-            permanence_df["permanence_days"].notna() &
-            (permanence_df["permanence_days"] >= 0) &
-            (~permanence_df["dependencia"].str.contains("Archivo Digital", case=False, na=False))
+            permanence_df["permanence_days"].notna()
+            & (permanence_df["permanence_days"] >= 0)
+            & (~permanence_df["dependencia"].str.contains("Archivo Digital", case=False, na=False))
         ].copy()
 
         if not valid_permanence.empty:
@@ -250,9 +258,12 @@ def render_conceptos_page(filters: FilterState) -> None:
             )
             st.plotly_chart(fig, width="stretch")
 
-            dep_stats = valid_permanence.groupby("dependencia")["permanence_days"].agg([
-                "count", "mean", "median", "std", "min", "max"
-            ]).round(1).sort_values("count", ascending=False)
+            dep_stats = (
+                valid_permanence.groupby("dependencia")["permanence_days"]
+                .agg(["count", "mean", "median", "std", "min", "max"])
+                .round(1)
+                .sort_values("count", ascending=False)
+            )
 
             with st.expander("📊 Ver estadísticas detalladas por dependencia"):
                 st.dataframe(

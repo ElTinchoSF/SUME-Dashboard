@@ -23,8 +23,8 @@ from .scraper import SUMEScraper
 from .validator import ScrapingValidator, ValidationReport
 
 __all__ = [
-    "ScraperConfig",
     "SUMEScraper",
+    "ScraperConfig",
     "ScrapingValidator",
     "ValidationReport",
 ]

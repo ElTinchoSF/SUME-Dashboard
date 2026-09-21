@@ -70,6 +70,13 @@ Este proyecto implementa un pipeline ETL completo para extraer, analizar y visua
   brew install pango cairo gdk-pixbuf libffi
   ```
 
+  En macOS, `weasyprint` necesita una variable de entorno para encontrar las librerías de Homebrew:
+  ```bash
+  export DYLD_LIBRARY_PATH=/opt/homebrew/lib
+  ```
+  Agregá esa línea a tu `~/.zshrc` o `~/.bash_profile` para que esté siempre disponible.
+  En Docker ya está configurado automáticamente.
+
 ### Pasos
 
 ```bash
@@ -136,6 +143,21 @@ streamlit run src/dashboard/app.py
 # En modo headless (para CI/smoke test)
 streamlit run src/dashboard/app.py --server.headless true --server.port 8501
 ```
+
+### Docker (recomendado para producción)
+
+```bash
+# Construir y ejecutar
+docker compose up -d
+
+# Ver logs
+docker compose logs -f dashboard
+
+# Detener
+docker compose down
+```
+
+El dashboard estará disponible en `http://localhost:8504`. La base de datos se monta como volume desde `./data/sume.db`.
 
 **Páginas del dashboard:**
 1. **Resumen** — KPIs, expedientes por concepto, tendencia mensual, top 10 dependencias
@@ -220,12 +242,16 @@ SUME-Dashboard/
 ├── config.yaml                    # Configuración central (Pydantic Settings)
 ├── config/normalization_rules.yaml # Reglas + overrides de normalización
 ├── requirements.txt               # Dependencias Python
+├── Dockerfile                     # Multi-stage build (builder → production)
+├── docker-compose.yml             # Servicio dashboard con volumes
+├── .dockerignore                  # Exclusiones para Docker build
 ├── README.md                      # Este archivo
 ├── data/
 │   ├── raw/                       # Snapshots HTML (gitignored)
 │   ├── processed/                 # Archivos intermedios (gitignored)
 │   └── sume.db                    # Base de datos SQLite (gitignored)
 ├── reports/                       # Reportes generados (gitignored)
+├── logs/                          # Logs de aplicación (gitignored)
 ├── templates/
 │   ├── report_main.md.j2          # Template informe principal ISO 9001 (7 secciones)
 │   └── report_concepto.md.j2      # Template hoja de evidencia por concepto
@@ -251,8 +277,12 @@ SUME-Dashboard/
 │   │   └── reports.py             # CLI, Jinja2, load_report_data, multi-format export
 │   ├── dashboard/
 │   │   ├── __init__.py
-│   │   ├── app.py                 # Entry point, routing, global filters
+│   │   ├── app.py                 # Entry point, routing, auth gate, global filters
+│   │   ├── auth.py                # Autenticación: password gate, SHA-256, session expiry
 │   │   ├── data.py                # @st.cache_data loaders (expedientes, circuitos, stats, etc.)
+│   │   ├── errors.py              # Error/warning rendering helpers
+│   │   ├── logging_config.py      # Centralized logging (console + file)
+│   │   ├── validation.py          # DB health checks (schema, tables, columns)
 │   │   ├── components/
 │   │   │   ├── filters.py         # Global filter widgets + session state
 │   │   │   └── charts.py          # Plotly builders: KPI, bar, line, histogram, boxplot, Sankey, parallel sets
@@ -434,6 +464,20 @@ export SUME_SCRAPER__DELAY_SECONDS=1.0
 export SUME_ANALYZER__MIN_SAMPLE_THRESHOLD=10
 ```
 
+### Autenticación (opcional)
+
+El dashboard incluye autenticación por contraseña (deshabilitada por defecto). Para habilitar:
+
+```yaml
+# config.yaml
+auth:
+  enabled: true
+  password: "mi_password_seguro"
+  session_hours: 8
+```
+
+La contraseña se almacena como hash SHA-256 con salt estático. La sesión expira después de `session_hours` horas.
+
 ---
 
 ## 📝 Versionado de reportes
@@ -486,10 +530,13 @@ python -m src.pipeline run --phase reporter --output reports/iso9001.md --format
 |----------|----------|
 | `ModuleNotFoundError: src` | Ejecutar desde raíz del proyecto: `python -m src.pipeline ...` |
 | `sqlite3.OperationalError: database is locked` | Cerrar otras instancias; usa `PRAGMA busy_timeout=30000` (ya configurado) |
-| `weasyprint` falla en PDF | Instalar dependencias de sistema (ver Instalación) o usar solo Markdown/Excel |
+| `weasyprint` falla en PDF | Instalar dependencias de sistema (ver Instalación) y en macOS: `export DYLD_LIBRARY_PATH=/opt/homebrew/lib` |
 | Dashboard no carga datos | Verificar que `data/sume.db` existe y tiene datos; ejecutar `init-db` y `analyzer` |
 | Normalización incorrecta | Ajustar `config/normalization_rules.yaml`; añadir a `explicit_overrides` |
 | Tests lentos | Usar `pytest -m "not slow"` para excluir benchmarks |
+| Docker: `permission denied` | Verificar permisos de `data/sume.db`; ejecutar `chmod 664 data/sume.db` |
+| Docker: puerto en uso | Cambiar `PORT` en `.env` o `docker-compose.yml`: `PORT=8505 docker compose up` |
+| Backup de BD | `python scripts/backup_db.py --compress --keep 10` |
 
 ---
 

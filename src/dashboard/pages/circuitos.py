@@ -8,28 +8,30 @@ Visualizes administrative circuits as interactive flow diagrams:
 """
 
 import json
-import streamlit as st
-import pandas as pd
 
-from src.dashboard.data import (
-    load_circuitos,
-    load_conceptos,
-    load_asuntos,
-    ensure_asuntos_populated,
-    FilterState,
-)
+import pandas as pd
+import streamlit as st
+
 from src.dashboard.components.charts import (
-    sankey_circuit,
     parallel_sets,
-    apply_default_layout,
-    COLORS,
+    sankey_circuit,
 )
 from src.dashboard.components.filters import render_filter_summary
+from src.dashboard.data import (
+    FilterState,
+    ensure_asuntos_populated,
+    load_asuntos,
+    load_circuitos,
+    load_conceptos,
+)
 
 
 def render_circuitos_page(filters: FilterState) -> None:
     """Render the Circuitos visualization page."""
     st.header("🔄 Visualización de Circuitos")
+    st.caption(
+        "Diagrama Sankey del circuito modal, conjuntos paralelos comparativos y detalle expandible por circuito."
+    )
     render_filter_summary(filters)
 
     # Load available conceptos
@@ -166,7 +168,9 @@ def render_circuitos_page(filters: FilterState) -> None:
             modal_badge = " 🟢 MODAL" if es_modal else ""
             n_extra = len(selected_df) - 1
             extra_note = f" (+{n_extra} más seleccionados)" if n_extra > 0 else ""
-            st.subheader(f"Circuito seleccionado ({frecuencia} expedientes){modal_badge}{extra_note}")
+            st.subheader(
+                f"Circuito seleccionado ({frecuencia} expedientes){modal_badge}{extra_note}"
+            )
             _render_modal_view(
                 pd.DataFrame([first_selected]),
                 selected_concepto,
@@ -239,7 +243,7 @@ def _render_modal_view(modal_df: pd.DataFrame, concepto: str, total_freq: int = 
     st.caption("**Secuencia del circuito:**")
     for i, step in enumerate(circuit):
         prefix = "🟢 " if i == 0 else ("→ " if i > 0 else "")
-        st.caption(f"{prefix}{step} ({counts[i-1] if i > 0 else frecuencia} expedientes)")
+        st.caption(f"{prefix}{step} ({counts[i - 1] if i > 0 else frecuencia} expedientes)")
 
 
 def _render_all_circuits_view(circuitos_df: pd.DataFrame, concepto: str) -> None:
@@ -255,8 +259,13 @@ def _render_all_circuits_view(circuitos_df: pd.DataFrame, concepto: str) -> None
     with col2:
         st.metric("Total Expedientes", f"{total_expedientes:,}")
     with col3:
-        modal_count = circuitos_df[circuitos_df["es_mas_frecuente"].astype(bool)]["frecuencia"].sum()
-        st.metric("Cobertura Modal", f"{modal_count/total_expedientes*100:.1f}%" if total_expedientes > 0 else "0%")
+        modal_count = circuitos_df[circuitos_df["es_mas_frecuente"].astype(bool)][
+            "frecuencia"
+        ].sum()
+        st.metric(
+            "Cobertura Modal",
+            f"{modal_count / total_expedientes * 100:.1f}%" if total_expedientes > 0 else "0%",
+        )
 
     # Parallel sets diagram
     st.caption("Diagrama de Conjuntos Paralelos (circuitos ordenados por frecuencia)")
@@ -266,9 +275,6 @@ def _render_all_circuits_view(circuitos_df: pd.DataFrame, concepto: str) -> None
 
 def _render_circuit_detail_table(circuitos_df: pd.DataFrame, concepto: str) -> None:
     """Render expandable detail table per circuit with expediente numbers and SUME links."""
-    from src.database.connection import get_connection
-
-    db = get_connection()
 
     # Sort by frequency descending (most frequent first)
     circuitos_sorted = circuitos_df.sort_values("frecuencia", ascending=False)
@@ -284,15 +290,18 @@ def _render_circuit_detail_table(circuitos_df: pd.DataFrame, concepto: str) -> N
             continue
 
         modal_badge = " 🟢 **MODAL**" if es_modal else ""
-        with st.expander(f"{'🟢' if es_modal else '🟠'} Circuito ({frecuencia} expedientes){modal_badge}", expanded=es_modal):
+        with st.expander(
+            f"{'🟢' if es_modal else '🟠'} Circuito ({frecuencia} expedientes){modal_badge}",
+            expanded=es_modal,
+        ):
             # Show circuit path
             st.markdown("**Ruta:**")
             for i, step in enumerate(circuit):
-                prefix = "1️⃣ " if i == 0 else f"{i+1}️⃣ "
+                prefix = "1️⃣ " if i == 0 else f"{i + 1}️⃣ "
                 st.markdown(f"{prefix}{step}")
 
             # Get expedientes for this circuit
-            expedientes = _get_expedientes_for_circuit(db, concepto, circuito_json)
+            expedientes = _get_expedientes_for_circuit(concepto, circuito_json)
 
             if expedientes:
                 st.markdown("**Expedientes:**")
@@ -303,8 +312,11 @@ def _render_circuit_detail_table(circuitos_df: pd.DataFrame, concepto: str) -> N
                     settings = None
                     try:
                         from src.config import get_settings
+
                         settings = get_settings()
-                        sume_url = f"{settings.sume.base_url}{settings.sume.detail_path}?numero={numero}"
+                        sume_url = (
+                            f"{settings.sume.base_url}{settings.sume.detail_path}?numero={numero}"
+                        )
                     except Exception:
                         sume_url = f"https://servicios.unl.edu.ar/expedientes/ver_expediente.php?numero={numero}"
 
@@ -313,13 +325,16 @@ def _render_circuit_detail_table(circuitos_df: pd.DataFrame, concepto: str) -> N
                 st.caption("No se encontraron expedientes para este circuito.")
 
 
-def _get_expedientes_for_circuit(db, concepto: str, circuito_json: str, limit: int = 50) -> list[dict]:
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_expedientes_for_circuit(concepto: str, circuito_json: str, limit: int = 50) -> list[dict]:
     """
     Get expedientes matching a specific circuit pattern.
 
     This is a simplified query - in production, you might want to use the circuitos table
     or a more sophisticated matching approach.
     """
+    from src.database.connection import get_connection
+
     try:
         circuit = json.loads(circuito_json)
     except (json.JSONDecodeError, TypeError):
@@ -337,6 +352,8 @@ def _get_expedientes_for_circuit(db, concepto: str, circuito_json: str, limit: i
 
     if not first_dep:
         return []
+
+    db = get_connection()
 
     query = """
         SELECT e.numero, e.fecha_alta

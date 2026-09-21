@@ -51,21 +51,25 @@ CREATE TABLE IF NOT EXISTS circuitos (
 """
 
 # Combined schema for easy execution
-SCHEMA_SQL = "\n".join([
-    EXPEDIENTES_SQL,
-    MOVIMIENTOS_SQL,
-    DEPENDENCIAS_SQL,
-    CIRCUITOS_SQL,
-])
+SCHEMA_SQL = "\n".join(
+    [
+        EXPEDIENTES_SQL,
+        MOVIMIENTOS_SQL,
+        DEPENDENCIAS_SQL,
+        CIRCUITOS_SQL,
+    ]
+)
 
 # Index creation SQL statements
-INDEXES_SQL = "\n".join([
-    "CREATE INDEX IF NOT EXISTS idx_expedientes_concepto ON expedientes(concepto);",
-    "CREATE INDEX IF NOT EXISTS idx_expedientes_fecha_alta ON expedientes(fecha_alta);",
-    "CREATE INDEX IF NOT EXISTS idx_movimientos_expediente ON movimientos(expediente_id);",
-    "CREATE INDEX IF NOT EXISTS idx_movimientos_dependencia ON movimientos(dependencia);",
-    "CREATE INDEX IF NOT EXISTS idx_circuitos_concepto ON circuitos(concepto);",
-])
+INDEXES_SQL = "\n".join(
+    [
+        "CREATE INDEX IF NOT EXISTS idx_expedientes_concepto ON expedientes(concepto);",
+        "CREATE INDEX IF NOT EXISTS idx_expedientes_fecha_alta ON expedientes(fecha_alta);",
+        "CREATE INDEX IF NOT EXISTS idx_movimientos_expediente ON movimientos(expediente_id);",
+        "CREATE INDEX IF NOT EXISTS idx_movimientos_dependencia ON movimientos(dependencia);",
+        "CREATE INDEX IF NOT EXISTS idx_circuitos_concepto ON circuitos(concepto);",
+    ]
+)
 
 # Complete initialization SQL (schema + indexes)
 INIT_SQL = SCHEMA_SQL + "\n" + INDEXES_SQL
@@ -86,9 +90,9 @@ SCHEMA_VERSION = 1
 def init_db(conn) -> None:
     """
     Initialize database schema on an existing connection.
-    
+
     Creates all tables and indexes if they don't exist.
-    
+
     Args:
         conn: SQLite connection to initialize.
     """

@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from src.scraper.client import SUMEClient, RequestResult, get_scraper_config
-from src.scraper.config import ScraperConfig, SelectorConfig
+from src.sume_scraper.client import RequestResult, SUMEClient
+from src.sume_scraper.config import ScraperConfig
 
 
 class TestScraperConfig:
@@ -230,6 +230,7 @@ class TestSUMEClient:
     def test_request_logging(self, client, caplog):
         """Test request logging captures URL, status, duration."""
         import logging
+
         mock_session = MagicMock()
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -259,7 +260,10 @@ class TestSUMEClient:
 
             mock_post.assert_called_once()
             call_args = mock_post.call_args
-            assert "numero=FBCB" in str(call_args) or call_args[1].get("data", {}).get("numero") == "FBCB"
+            assert (
+                "numero=FBCB" in str(call_args)
+                or call_args[1].get("data", {}).get("numero") == "FBCB"
+            )
 
     def test_get_detail_method(self, client):
         """Test get_detail constructs correct URL."""

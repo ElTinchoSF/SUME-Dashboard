@@ -12,13 +12,12 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
 
 from src.analysis.circuits import run_full_circuit_analysis
 from src.analysis.reports import generate_main_report
 from src.analysis.statistics import run_full_statistics_analysis
 from src.config import get_settings
-from src.database import get_connection, init_database as db_init_database
+from src.database import get_connection
 
 
 def init_database() -> int:
@@ -34,6 +33,7 @@ def init_database() -> int:
         conn = get_connection()
         # Force schema initialization
         from src.database.connection import _initialize_schema
+
         _initialize_schema(conn)
         print("Database initialized successfully.")
         print(f"Database location: {get_settings().database.path}")
@@ -43,7 +43,9 @@ def init_database() -> int:
         return 1
 
 
-def run_scraper(max_pages: Optional[int] = None, date_from: Optional[str] = None, date_to: Optional[str] = None) -> int:
+def run_scraper(
+    max_pages: int | None = None, date_from: str | None = None, date_to: str | None = None
+) -> int:
     """
     Run the scraper phase.
 
@@ -55,19 +57,27 @@ def run_scraper(max_pages: Optional[int] = None, date_from: Optional[str] = None
     Returns:
         int: Exit code (0 for success).
     """
-    from src.scraper.main import run_scraper as scrape
+    from src.sume_scraper import ScraperConfig as SUMEScraperConfig
+    from src.sume_scraper.scraper import SUMEScraper
 
     print(f"Running scraper phase{' (max ' + str(max_pages) + ' pages)' if max_pages else ''}...")
     if date_from or date_to:
         print(f"  - Date filter: {date_from or '...'} to {date_to or '...'}")
-        print(f"  - Using advanced search with date filters")
-    report = scrape(max_pages=max_pages, date_from=date_from, date_to=date_to)
-    report.print_summary()
+        print("  - Using advanced search with date filters")
 
-    return 1 if report.has_critical_errors() else 0
+    config = SUMEScraperConfig(
+        faculty_code="FBCB",
+        date_from=date_from,
+        date_to=date_to,
+    )
+    scraper = SUMEScraper(config)
+    result = scraper.run()
+    result.print_summary()
+
+    return 1 if result.has_critical_errors() else 0
 
 
-def _filter_expedientes_by_date(date_from: Optional[str], date_to: Optional[str]) -> None:
+def _filter_expedientes_by_date(date_from: str | None, date_to: str | None) -> None:
     """
     Filter expedientes by creation date, removing those outside the range.
 
@@ -111,7 +121,9 @@ def _filter_expedientes_by_date(date_from: Optional[str], date_to: Optional[str]
     count_to_remove = total_count - count_to_keep
 
     if count_to_remove > 0:
-        print(f"\n  - Filtering by date: keeping {count_to_keep} expedientes, removing {count_to_remove}")
+        print(
+            f"\n  - Filtering by date: keeping {count_to_keep} expedientes, removing {count_to_remove}"
+        )
 
         # Get IDs of expedientes to keep
         keep_query = f"SELECT id FROM expedientes {where_clause}"
@@ -129,10 +141,15 @@ def _filter_expedientes_by_date(date_from: Optional[str], date_to: Optional[str]
             with transaction() as conn:
                 # Remove movimientos for expedientes to delete
                 placeholders = ",".join("?" * len(remove_ids))
-                conn.execute(f"DELETE FROM movimientos WHERE expediente_id IN ({placeholders})", list(remove_ids))
+                conn.execute(
+                    f"DELETE FROM movimientos WHERE expediente_id IN ({placeholders})",
+                    list(remove_ids),
+                )
 
                 # Remove expedientes
-                conn.execute(f"DELETE FROM expedientes WHERE id IN ({placeholders})", list(remove_ids))
+                conn.execute(
+                    f"DELETE FROM expedientes WHERE id IN ({placeholders})", list(remove_ids)
+                )
 
                 # Remove orphaned dependencias (optional, could keep for reference)
                 # conn.execute("DELETE FROM dependencias WHERE ...")
@@ -154,15 +171,21 @@ def run_analyzer() -> int:
         conn = get_connection()
         print("  - Computing circuit frequencies and identifying modal circuits...")
         circuit_result = run_full_circuit_analysis(conn)
-        print(f"  - Found {len(circuit_result)} unique circuits across {circuit_result['concepto'].nunique()} conceptos")
-        modal_count = int(circuit_result['es_mas_frecuente'].sum())
+        print(
+            f"  - Found {len(circuit_result)} unique circuits across {circuit_result['concepto'].nunique()} conceptos"
+        )
+        modal_count = int(circuit_result["es_mas_frecuente"].sum())
         print(f"  - Identified {modal_count} modal circuits")
 
-        print("  - Computing step statistics, permanence times, outliers, dependency traffic, concept distribution...")
+        print(
+            "  - Computing step statistics, permanence times, outliers, dependency traffic, concept distribution..."
+        )
         stats_result = run_full_statistics_analysis(conn)
         print(f"  - Step statistics for {len(stats_result['step_statistics'])} conceptos")
         print(f"  - Permanence times for {len(stats_result['permanence_times'])} movement steps")
-        print(f"  - Outliers detected: {len(stats_result['outliers'][stats_result['outliers']['outlier_type'] != 'none'])}")
+        print(
+            f"  - Outliers detected: {len(stats_result['outliers'][stats_result['outliers']['outlier_type'] != 'none'])}"
+        )
         print(f"  - Dependency traffic for {len(stats_result['dependency_traffic'])} dependencias")
         print(f"  - Concept distribution for {len(stats_result['concept_distribution'])} conceptos")
 
@@ -173,8 +196,9 @@ def run_analyzer() -> int:
         return 1
 
 
-def run_reporter(output: Optional[str] = None, format: str = "markdown",
-                 conceptos: Optional[str] = None) -> int:
+def run_reporter(
+    output: str | None = None, format: str = "markdown", conceptos: str | None = None
+) -> int:
     """
     Run the reporter phase.
 
@@ -189,21 +213,21 @@ def run_reporter(output: Optional[str] = None, format: str = "markdown",
     print(f"Running reporter phase (format: {format})...")
     try:
         output_path = Path(output) if output else Path("reports/iso9001.md")
-        
+
         # Parse conceptos filter
         conceptos_filter = None
         if conceptos:
             conceptos_filter = [c.strip() for c in conceptos.split(",") if c.strip()]
-        
+
         conn = get_connection()
-        
+
         # First ensure analysis is done
         print("  - Running circuit analysis...")
         run_full_circuit_analysis(conn)
-        
+
         print("  - Running statistics analysis...")
         run_full_statistics_analysis(conn)
-        
+
         print(f"  - Generating report: {output_path}")
         generate_main_report(
             output_path=output_path,
@@ -212,12 +236,13 @@ def run_reporter(output: Optional[str] = None, format: str = "markdown",
             db=conn,
             templates_dir="templates",
         )
-        
+
         print(f"Reporter phase completed successfully. Output: {output_path}")
         return 0
     except Exception as e:
         print(f"Error running reporter: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -305,7 +330,7 @@ Examples:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """
     Main CLI entry point.
 

@@ -5,13 +5,12 @@ Validates database schema, table presence, and data completeness
 on startup. Provides a health report for display in the sidebar.
 """
 
-import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.config import get_settings
-from src.database.connection import get_connection
 from src.dashboard.logging_config import get_logger
+from src.database.connection import get_connection
 
 logger = get_logger("validation")
 
@@ -29,6 +28,7 @@ REQUIRED_COLUMNS = {
 @dataclass
 class HealthIssue:
     """A single health issue found during validation."""
+
     level: str  # "error", "warning", "info"
     message: str
     detail: str = ""
@@ -37,6 +37,7 @@ class HealthIssue:
 @dataclass
 class HealthReport:
     """Complete validation report for the dashboard database."""
+
     is_healthy: bool = True
     issues: list[HealthIssue] = field(default_factory=list)
     table_counts: dict[str, int] = field(default_factory=dict)
@@ -174,9 +175,7 @@ def validate_database() -> HealthReport:
         pass
 
     try:
-        cursor = conn.execute(
-            "SELECT COUNT(DISTINCT concepto) FROM expedientes"
-        )
+        cursor = conn.execute("SELECT COUNT(DISTINCT concepto) FROM expedientes")
         unique_conceptos = cursor.fetchone()[0]
         report.add_info(f"{unique_conceptos} conceptos únicos")
     except Exception:

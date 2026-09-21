@@ -6,7 +6,6 @@ Uses Pydantic Settings for type validation and nested configuration.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -111,7 +110,7 @@ class Settings(BaseSettings):
     )
 
     @classmethod
-    def load(cls, config_path: Optional[Path] = None) -> "Settings":
+    def load(cls, config_path: Path | None = None) -> "Settings":
         """
         Load settings from config.yaml.
 
@@ -129,7 +128,7 @@ class Settings(BaseSettings):
 
 
 # Global settings instance (lazy-loaded)
-_settings: Optional[Settings] = None
+_settings: Settings | None = None
 
 
 def get_settings() -> Settings:
@@ -140,7 +139,7 @@ def get_settings() -> Settings:
     return _settings
 
 
-def reload_settings(config_path: Optional[Path] = None) -> Settings:
+def reload_settings(config_path: Path | None = None) -> Settings:
     """Force reload of settings from config file."""
     global _settings
     _settings = Settings.load(config_path)

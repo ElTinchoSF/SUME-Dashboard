@@ -12,7 +12,6 @@ Provides idempotency guarantee: normalize(normalize(x)) == normalize(x)
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -23,7 +22,7 @@ class NormalizationRule:
 
     type: str
     description: str
-    pattern: Optional[str] = None
+    pattern: str | None = None
     replacement: str = ""
     patterns: list[str] = field(default_factory=list)
 
@@ -36,7 +35,7 @@ class NormalizationRules:
     explicit_overrides: dict[str, str] = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
 
-    def get_rule(self, rule_type: str) -> Optional[NormalizationRule]:
+    def get_rule(self, rule_type: str) -> NormalizationRule | None:
         """Get a rule by its type."""
         for rule in self.rules:
             if rule.type == rule_type:
@@ -54,7 +53,7 @@ def load_rules(path: Path) -> NormalizationRules:
     Returns:
         NormalizationRules object with parsed rules and overrides.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     rules = []
@@ -78,7 +77,7 @@ def load_rules(path: Path) -> NormalizationRules:
     )
 
 
-def _extract_faculty_from_parentheses(text: str) -> tuple[str, Optional[str]]:
+def _extract_faculty_from_parentheses(text: str) -> tuple[str, str | None]:
     """
     Extract faculty from parenthetical notation.
 
@@ -92,13 +91,13 @@ def _extract_faculty_from_parentheses(text: str) -> tuple[str, Optional[str]]:
         Tuple of (dependency_name, faculty_abbreviation or None)
     """
     # Pattern: "Something (Mesa de Entradas - FACULTY)" or "Something (FACULTY)"
-    match = re.match(r'^(.+?)\s*\((.+?)\)\s*$', text)
+    match = re.match(r"^(.+?)\s*\((.+?)\)\s*$", text)
     if match:
         dep_name = match.group(1).strip()
         paren_content = match.group(2).strip()
 
         # Extract faculty from "Mesa de Entradas - FACULTY" pattern
-        mde_match = re.match(r'^Mesa de Entradas\s*-\s*(.+)$', paren_content)
+        mde_match = re.match(r"^Mesa de Entradas\s*-\s*(.+)$", paren_content)
         if mde_match:
             faculty = mde_match.group(1).strip()
         else:
@@ -178,11 +177,11 @@ def normalize_batch(dependencias: list[str], rules: NormalizationRules) -> list[
 
 
 # Cache for loaded rules to avoid repeated file I/O
-_rules_cache: Optional[NormalizationRules] = None
-_rules_cache_path: Optional[Path] = None
+_rules_cache: NormalizationRules | None = None
+_rules_cache_path: Path | None = None
 
 
-def get_normalizer(rules_path: Optional[Path] = None) -> NormalizationRules:
+def get_normalizer(rules_path: Path | None = None) -> NormalizationRules:
     """
     Get cached normalization rules, loading from file if necessary.
 
@@ -196,6 +195,7 @@ def get_normalizer(rules_path: Optional[Path] = None) -> NormalizationRules:
 
     if rules_path is None:
         from src.config import get_settings
+
         settings = get_settings()
         rules_path = Path(settings.normalizer.rules_path)
 

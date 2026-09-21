@@ -8,7 +8,6 @@ Sessions are tracked via Streamlit session_state with configurable TTL.
 
 import hashlib
 import hmac
-import os
 from datetime import datetime, timedelta
 
 import streamlit as st
@@ -104,7 +103,8 @@ def render_login_page() -> None:
         layout="centered",
     )
 
-    st.markdown("""
+    st.markdown(
+        """
         <div style="text-align: center; padding: 2rem 0;">
             <h1 style="color: #244C5A; font-family: 'Montserrat', sans-serif;">
                 📊 SUME Dashboard
@@ -114,7 +114,9 @@ def render_login_page() -> None:
                 Facultad de Bioquímica y Ciencias Biológicas — UNL
             </p>
         </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     with st.form("login_form"):
         password = st.text_input(

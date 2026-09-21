@@ -7,11 +7,10 @@ from expediente movement sequences, compute frequencies, and identify modal circ
 
 import json
 import logging
+import sqlite3
 from collections import Counter
-from typing import Any
 
 import pandas as pd
-import sqlite3
 
 from src.config import get_settings
 from src.database.connection import get_connection
@@ -137,11 +136,13 @@ def compute_circuit_frequencies(db: sqlite3.Connection | None = None) -> pd.Data
         movimientos = []
         for _, row in group.iterrows():
             if pd.notna(row["orden"]):
-                movimientos.append({
-                    "orden": int(row["orden"]),
-                    "fecha_recepcion": row["fecha_recepcion"],
-                    "dependencia": row["dependencia"],
-                })
+                movimientos.append(
+                    {
+                        "orden": int(row["orden"]),
+                        "fecha_recepcion": row["fecha_recepcion"],
+                        "dependencia": row["dependencia"],
+                    }
+                )
 
         # Reconstruct circuit
         circuit = reconstruct_circuit(expediente, movimientos)
@@ -159,20 +160,26 @@ def compute_circuit_frequencies(db: sqlite3.Connection | None = None) -> pd.Data
         freq_counter = Counter(circuit_json_list)
 
         for circuito_json, frecuencia in freq_counter.items():
-            rows.append({
-                "circuito_json": circuito_json,
-                "concepto": concepto,
-                "frecuencia": frecuencia,
-                "es_mas_frecuente": False,  # Will be set by identify_modal_circuits
-            })
+            rows.append(
+                {
+                    "circuito_json": circuito_json,
+                    "concepto": concepto,
+                    "frecuencia": frecuencia,
+                    "es_mas_frecuente": False,  # Will be set by identify_modal_circuits
+                }
+            )
 
     result_df = pd.DataFrame(rows)
 
     if not result_df.empty:
         # Sort by concepto, then by frequency descending
-        result_df = result_df.sort_values(["concepto", "frecuencia"], ascending=[True, False]).reset_index(drop=True)
+        result_df = result_df.sort_values(
+            ["concepto", "frecuencia"], ascending=[True, False]
+        ).reset_index(drop=True)
 
-    logger.info(f"Computed {len(result_df)} unique circuits across {len(circuits_by_concepto)} conceptos")
+    logger.info(
+        f"Computed {len(result_df)} unique circuits across {len(circuits_by_concepto)} conceptos"
+    )
     return result_df
 
 
@@ -219,7 +226,9 @@ def identify_modal_circuits(freq_df: pd.DataFrame, min_samples: int | None = Non
         total = concepto_rows["total_expedientes"].iloc[0]
 
         if total < min_samples:
-            logger.info(f"Concepto '{concepto}' has only {total} expedientes (< {min_samples}), skipping modal identification")
+            logger.info(
+                f"Concepto '{concepto}' has only {total} expedientes (< {min_samples}), skipping modal identification"
+            )
             continue
 
         # Find max frequency
@@ -228,7 +237,9 @@ def identify_modal_circuits(freq_df: pd.DataFrame, min_samples: int | None = Non
 
         if len(max_freq_rows) > 1:
             # Tie detected - log warning and pick first
-            circuit_descriptions = [_json_to_circuit(row["circuito_json"]) for _, row in max_freq_rows.iterrows()]
+            circuit_descriptions = [
+                _json_to_circuit(row["circuito_json"]) for _, row in max_freq_rows.iterrows()
+            ]
             logger.warning(
                 f"Tie detected for concepto '{concepto}': {len(max_freq_rows)} circuits "
                 f"with frequency {max_freq}. Selecting first: {circuit_descriptions[0]}"
@@ -242,7 +253,9 @@ def identify_modal_circuits(freq_df: pd.DataFrame, min_samples: int | None = Non
     result = result.drop(columns=["total_expedientes"])
 
     modal_count = result["es_mas_frecuente"].sum()
-    logger.info(f"Identified {modal_count} modal circuits across {result['concepto'].nunique()} conceptos")
+    logger.info(
+        f"Identified {modal_count} modal circuits across {result['concepto'].nunique()} conceptos"
+    )
 
     return result
 

@@ -5,50 +5,43 @@ Tests data loading, filter logic, and chart builders.
 """
 
 import json
-import pytest
-from datetime import date, timedelta
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from datetime import date
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import numpy as np
+import pytest
+
+from src.dashboard.components.charts import (
+    COLORS,
+    apply_default_layout,
+    bar_chart_horizontal,
+    boxplot_permanence,
+    circuit_frequency_table,
+    concept_distribution_pie,
+    dependency_traffic_bar,
+    histogram_steps,
+    line_chart_monthly,
+    parallel_sets,
+    sankey_circuit,
+)
+from src.dashboard.components.filters import (
+    get_filter_state,
+    init_filter_state,
+    reset_filters,
+    set_filter_state,
+)
 
 # Import dashboard modules
 from src.dashboard.data import (
     FilterState,
-    load_expedientes,
-    load_circuitos,
-    load_step_stats,
-    load_permanence,
-    load_dependencias,
-    load_conceptos,
-    load_dependency_traffic,
-    load_concept_distribution,
-    load_monthly_trend,
     _get_db_mtime,
     invalidate_cache,
-)
-from src.dashboard.components.filters import (
-    init_filter_state,
-    get_filter_state,
-    set_filter_state,
-    reset_filters,
-    FilterState as FilterStateComponent,
-)
-from src.dashboard.components.charts import (
-    kpi_card,
-    bar_chart_horizontal,
-    line_chart_monthly,
-    histogram_steps,
-    boxplot_permanence,
-    sankey_circuit,
-    parallel_sets,
-    circuit_frequency_table,
-    dependency_traffic_bar,
-    concept_distribution_pie,
-    render_kpi_row,
-    apply_default_layout,
-    COLORS,
+    load_circuitos,
+    load_conceptos,
+    load_dependencias,
+    load_expedientes,
+    load_permanence,
+    load_step_stats,
 )
 
 
@@ -130,30 +123,38 @@ class TestDataLoading:
     @pytest.fixture
     def sample_expedientes_df(self):
         """Sample expedientes DataFrame."""
-        return pd.DataFrame({
-            "id": [1, 2, 3],
-            "numero": ["EXP-001", "EXP-002", "EXP-003"],
-            "concepto": ["Gestión Alumno", "Gestión de Becas", "Gestión Alumno"],
-            "descripcion": ["Desc 1", "Desc 2", "Desc 3"],
-            "fecha_alta": pd.to_datetime(["2025-01-15", "2025-02-20", "2025-03-10"]),
-            "estado": ["En trámite", "Finalizado", "En trámite"],
-            "palabras_clave": ["alumno, inscripcion", "beca, ayuda", "alumno, titulo"],
-            "origenes": ["Mesa Entradas", "Mesa Entradas", "Mesa Entradas"],
-            "fecha_extraccion": pd.to_datetime(["2025-01-15 10:00", "2025-02-20 11:00", "2025-03-10 12:00"]),
-        })
+        return pd.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "numero": ["EXP-001", "EXP-002", "EXP-003"],
+                "concepto": ["Gestión Alumno", "Gestión de Becas", "Gestión Alumno"],
+                "descripcion": ["Desc 1", "Desc 2", "Desc 3"],
+                "fecha_alta": pd.to_datetime(["2025-01-15", "2025-02-20", "2025-03-10"]),
+                "estado": ["En trámite", "Finalizado", "En trámite"],
+                "palabras_clave": ["alumno, inscripcion", "beca, ayuda", "alumno, titulo"],
+                "origenes": ["Mesa Entradas", "Mesa Entradas", "Mesa Entradas"],
+                "fecha_extraccion": pd.to_datetime(
+                    ["2025-01-15 10:00", "2025-02-20 11:00", "2025-03-10 12:00"]
+                ),
+            }
+        )
 
     @pytest.fixture
     def sample_circuitos_df(self):
         """Sample circuitos DataFrame."""
-        circuit1 = json.dumps(["Mesa de Entradas - FBCB", "Alumnado (FBCB)", "Secretaría Académica"])
+        circuit1 = json.dumps(
+            ["Mesa de Entradas - FBCB", "Alumnado (FBCB)", "Secretaría Académica"]
+        )
         circuit2 = json.dumps(["Mesa de Entradas - FBCB", "Alumnado (FBCB)", "Dirección"])
-        return pd.DataFrame({
-            "id": [1, 2],
-            "circuito": [circuit1, circuit2],
-            "concepto": ["Gestión Alumno", "Gestión Alumno"],
-            "frecuencia": [50, 30],
-            "es_mas_frecuente": [True, False],
-        })
+        return pd.DataFrame(
+            {
+                "id": [1, 2],
+                "circuito": [circuit1, circuit2],
+                "concepto": ["Gestión Alumno", "Gestión Alumno"],
+                "frecuencia": [50, 30],
+                "es_mas_frecuente": [True, False],
+            }
+        )
 
     @patch("src.dashboard.data.get_connection")
     def test_load_expedientes_no_filters(self, mock_get_conn, sample_expedientes_df):
@@ -207,14 +208,18 @@ class TestDataLoading:
         mock_get_conn.return_value = mock_conn
 
         # Sample data with movements
-        mov_df = pd.DataFrame({
-            "expediente_id": [1, 1, 2, 2],
-            "numero": ["EXP-001", "EXP-001", "EXP-002", "EXP-002"],
-            "concepto": ["Gestión Alumno"] * 4,
-            "orden": [1, 2, 1, 2],
-            "fecha_recepcion": pd.to_datetime(["2025-01-15", "2025-01-20", "2025-02-01", "2025-02-10"]),
-            "dependencia": ["Alumnado", "Secretaría", "Alumnado", "Dirección"],
-        })
+        mov_df = pd.DataFrame(
+            {
+                "expediente_id": [1, 1, 2, 2],
+                "numero": ["EXP-001", "EXP-001", "EXP-002", "EXP-002"],
+                "concepto": ["Gestión Alumno"] * 4,
+                "orden": [1, 2, 1, 2],
+                "fecha_recepcion": pd.to_datetime(
+                    ["2025-01-15", "2025-01-20", "2025-02-01", "2025-02-10"]
+                ),
+                "dependencia": ["Alumnado", "Secretaría", "Alumnado", "Dirección"],
+            }
+        )
 
         with patch("pandas.read_sql_query", return_value=mov_df):
             result = load_permanence("Gestión Alumno")
@@ -234,10 +239,12 @@ class TestDataLoading:
         mock_conn = MagicMock()
         mock_get_conn.return_value = mock_conn
 
-        dep_df = pd.DataFrame({
-            "nombre": ["Alumnado (FBCB)", "Secretaría Académica", "Dirección"],
-            "total_expedientes": [100, 80, 50],
-        })
+        dep_df = pd.DataFrame(
+            {
+                "nombre": ["Alumnado (FBCB)", "Secretaría Académica", "Dirección"],
+                "total_expedientes": [100, 80, 50],
+            }
+        )
 
         with patch("pandas.read_sql_query", return_value=dep_df):
             result = load_dependencias()
@@ -251,10 +258,12 @@ class TestDataLoading:
         mock_conn = MagicMock()
         mock_get_conn.return_value = mock_conn
 
-        conc_df = pd.DataFrame({
-            "concepto": ["Gestión Alumno", "Gestión de Becas"],
-            "cantidad": [150, 80],
-        })
+        conc_df = pd.DataFrame(
+            {
+                "concepto": ["Gestión Alumno", "Gestión de Becas"],
+                "cantidad": [150, 80],
+            }
+        )
 
         with patch("pandas.read_sql_query", return_value=conc_df):
             result = load_conceptos()
@@ -270,8 +279,14 @@ class TestFilterComponents:
         """Test filter state initialization."""
         # Clear any existing state
         import streamlit as st
+
         if hasattr(st, "session_state"):
-            for key in ["dashboard_filters", "date_range", "selected_conceptos", "selected_dependencias"]:
+            for key in [
+                "dashboard_filters",
+                "date_range",
+                "selected_conceptos",
+                "selected_dependencias",
+            ]:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -285,7 +300,12 @@ class TestFilterComponents:
         import streamlit as st
 
         # Clear state
-        for key in ["dashboard_filters", "date_range", "selected_conceptos", "selected_dependencias"]:
+        for key in [
+            "dashboard_filters",
+            "date_range",
+            "selected_conceptos",
+            "selected_dependencias",
+        ]:
             if key in st.session_state:
                 del st.session_state[key]
 
@@ -332,14 +352,19 @@ class TestChartBuilders:
         assert fig.layout.title.text == "Test Chart"
         assert fig.layout.height == 400
         assert fig.layout.plot_bgcolor == COLORS["white"]
-        assert fig.layout.font.family == "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        assert (
+            fig.layout.font.family
+            == "Montserrat, Lato, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        )
 
     def test_bar_chart_horizontal(self):
         """Test horizontal bar chart creation."""
-        df = pd.DataFrame({
-            "categoria": ["A", "B", "C"],
-            "valor": [10, 20, 15],
-        })
+        df = pd.DataFrame(
+            {
+                "categoria": ["A", "B", "C"],
+                "valor": [10, 20, 15],
+            }
+        )
 
         fig = bar_chart_horizontal(df, x="valor", y="categoria", title="Test Bar")
 
@@ -349,14 +374,17 @@ class TestChartBuilders:
 
     def test_line_chart_monthly(self):
         """Test monthly line chart creation."""
-        df = pd.DataFrame({
-            "mes": ["2025-01", "2025-02", "2025-03"],
-            "cantidad": [10, 15, 12],
-            "acumulado": [10, 25, 37],
-        })
+        df = pd.DataFrame(
+            {
+                "mes": ["2025-01", "2025-02", "2025-03"],
+                "cantidad": [10, 15, 12],
+                "acumulado": [10, 25, 37],
+            }
+        )
 
-        fig = line_chart_monthly(df, date_col="mes", value_col="cantidad",
-                                  title="Test Line", cumulative_col="acumulado")
+        fig = line_chart_monthly(
+            df, date_col="mes", value_col="cantidad", title="Test Line", cumulative_col="acumulado"
+        )
 
         assert len(fig.data) == 2  # Main line + cumulative
         assert fig.data[0].name == "Cantidad mensual"
@@ -364,12 +392,15 @@ class TestChartBuilders:
 
     def test_histogram_steps(self):
         """Test histogram with stat lines."""
-        df = pd.DataFrame({
-            "step_count": [2, 3, 3, 4, 4, 4, 5, 5, 6],
-        })
+        df = pd.DataFrame(
+            {
+                "step_count": [2, 3, 3, 4, 4, 4, 5, 5, 6],
+            }
+        )
 
-        fig = histogram_steps(df, bins=5, title="Test Hist",
-                              mean_line=4.0, median_line=4.0, mode_line=4)
+        fig = histogram_steps(
+            df, bins=5, title="Test Hist", mean_line=4.0, median_line=4.0, mode_line=4
+        )
 
         assert len(fig.data) == 1
         assert fig.data[0].type == "histogram"
@@ -378,10 +409,12 @@ class TestChartBuilders:
 
     def test_boxplot_permanence(self):
         """Test boxplot creation."""
-        df = pd.DataFrame({
-            "dependencia": ["A", "A", "B", "B", "C", "C"],
-            "permanence_days": [1, 2, 3, 4, 5, 10],
-        })
+        df = pd.DataFrame(
+            {
+                "dependencia": ["A", "A", "B", "B", "C", "C"],
+                "permanence_days": [1, 2, 3, 4, 5, 10],
+            }
+        )
 
         fig = boxplot_permanence(df, x="dependencia", y="permanence_days", title="Test Box")
 
@@ -413,11 +446,13 @@ class TestChartBuilders:
         circuit1 = json.dumps(["MDE", "A", "B"])
         circuit2 = json.dumps(["MDE", "A", "C"])
 
-        df = pd.DataFrame({
-            "circuito_json": [circuit1, circuit2],
-            "frecuencia": [50, 30],
-            "es_mas_frecuente": [True, False],
-        })
+        df = pd.DataFrame(
+            {
+                "circuito_json": [circuit1, circuit2],
+                "frecuencia": [50, 30],
+                "es_mas_frecuente": [True, False],
+            }
+        )
 
         fig = parallel_sets(df, title="Test Parallel", max_circuits=10)
 
@@ -428,11 +463,13 @@ class TestChartBuilders:
         circuit1 = json.dumps(["MDE", "A", "B"])
         circuit2 = json.dumps(["MDE", "A", "C"])
 
-        df = pd.DataFrame({
-            "circuito_json": [circuit1, circuit2],
-            "frecuencia": [50, 30],
-            "es_mas_frecuente": [True, False],
-        })
+        df = pd.DataFrame(
+            {
+                "circuito_json": [circuit1, circuit2],
+                "frecuencia": [50, 30],
+                "es_mas_frecuente": [True, False],
+            }
+        )
 
         fig = circuit_frequency_table(df, title="Test Table")
 
@@ -441,12 +478,14 @@ class TestChartBuilders:
 
     def test_dependency_traffic_bar(self):
         """Test dependency traffic bar chart."""
-        df = pd.DataFrame({
-            "dependencia": ["A", "B", "C"],
-            "total_expedientes": [100, 80, 50],
-            "pct_expedientes": [43.5, 34.8, 21.7],
-            "total_movimientos": [200, 150, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "dependencia": ["A", "B", "C"],
+                "total_expedientes": [100, 80, 50],
+                "pct_expedientes": [43.5, 34.8, 21.7],
+                "total_movimientos": [200, 150, 100],
+            }
+        )
 
         fig = dependency_traffic_bar(df, title="Test Traffic", top_n=10)
 
@@ -455,11 +494,13 @@ class TestChartBuilders:
 
     def test_concept_distribution_pie(self):
         """Test concept distribution pie chart."""
-        df = pd.DataFrame({
-            "concepto": ["A", "B", "C"],
-            "cantidad": [100, 80, 50],
-            "porcentaje": [43.5, 34.8, 21.7],
-        })
+        df = pd.DataFrame(
+            {
+                "concepto": ["A", "B", "C"],
+                "cantidad": [100, 80, 50],
+                "porcentaje": [43.5, 34.8, 21.7],
+            }
+        )
 
         fig = concept_distribution_pie(df, title="Test Pie")
 
@@ -505,7 +546,6 @@ class TestCacheInvalidation:
 
 # Import plotly.graph_objects for chart tests
 import plotly.graph_objects as go
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

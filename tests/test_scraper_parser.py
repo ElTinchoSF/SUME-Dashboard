@@ -9,18 +9,16 @@ Tests cover:
 """
 
 import pytest
-from bs4 import BeautifulSoup
 
-from src.scraper.parser import (
-    parse_listing_page,
-    parse_detail_page,
-    parse_movimientos_table,
+from src.sume_scraper.config import SelectorConfig
+from src.sume_scraper.parser import (
     ExpedienteDict,
-    MovimientoDict,
     ListingResult,
+    MovimientoDict,
+    parse_detail_page,
+    parse_listing_page,
+    parse_movimientos_table,
 )
-from src.scraper.config import SelectorConfig
-
 
 # ============================================================================
 # HTML Fixtures
@@ -222,6 +220,7 @@ BASE_URL = "https://servicios.unl.edu.ar/expedientes/"
 # Listing Page Tests
 # ============================================================================
 
+
 class TestParseListingPage:
     """Tests for parse_listing_page function."""
 
@@ -231,9 +230,18 @@ class TestParseListingPage:
 
         assert isinstance(result, ListingResult)
         assert len(result.detail_urls) == 3
-        assert result.detail_urls[0] == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=12345"
-        assert result.detail_urls[1] == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=12346"
-        assert result.detail_urls[2] == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=12347"
+        assert (
+            result.detail_urls[0]
+            == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=12345"
+        )
+        assert (
+            result.detail_urls[1]
+            == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=12346"
+        )
+        assert (
+            result.detail_urls[2]
+            == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=12347"
+        )
         assert result.next_page_url is not None
         assert "page=2" in result.next_page_url
 
@@ -262,7 +270,10 @@ class TestParseListingPage:
         </table>
         """
         result = parse_listing_page(html, "https://servicios.unl.edu.ar/")
-        assert result.detail_urls[0] == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=999"
+        assert (
+            result.detail_urls[0]
+            == "https://servicios.unl.edu.ar/expedientes/ver_expediente.php?id=999"
+        )
 
     def test_parse_listing_custom_selectors(self):
         """Test parsing with custom selector configuration."""
@@ -292,12 +303,15 @@ class TestParseListingPage:
 # Detail Page Tests
 # ============================================================================
 
+
 class TestParseDetailPage:
     """Tests for parse_detail_page function."""
 
     def test_parse_detail_happy_path(self):
         """Test parsing a complete detail page with all fields."""
-        expediente = parse_detail_page(SAMPLE_DETAIL_HTML, "https://example.com/ver_expediente.php?id=12345")
+        expediente = parse_detail_page(
+            SAMPLE_DETAIL_HTML, "https://example.com/ver_expediente.php?id=12345"
+        )
 
         assert isinstance(expediente, ExpedienteDict)
         assert expediente.numero == "EXP-2025-00001"
@@ -311,7 +325,9 @@ class TestParseDetailPage:
 
     def test_parse_detail_minimal_fields(self):
         """Test parsing a detail page with only required fields."""
-        expediente = parse_detail_page(SAMPLE_DETAIL_MINIMAL_HTML, "https://example.com/detail?id=2")
+        expediente = parse_detail_page(
+            SAMPLE_DETAIL_MINIMAL_HTML, "https://example.com/detail?id=2"
+        )
 
         assert expediente.numero == "EXP-2025-00002"
         assert expediente.concepto == "Gestión de Becas"
@@ -324,7 +340,9 @@ class TestParseDetailPage:
     def test_parse_detail_missing_concepto_raises(self):
         """Test that missing concepto raises ValueError."""
         with pytest.raises(ValueError, match="concepto"):
-            parse_detail_page(SAMPLE_DETAIL_MISSING_REQUIRED_HTML, "https://example.com/detail?id=3")
+            parse_detail_page(
+                SAMPLE_DETAIL_MISSING_REQUIRED_HTML, "https://example.com/detail?id=3"
+            )
 
     def test_parse_detail_missing_fecha_alta_raises(self):
         """Test that missing fecha_alta raises ValueError."""
@@ -396,6 +414,7 @@ class TestParseDetailPage:
 # ============================================================================
 # Movimientos Table Tests
 # ============================================================================
+
 
 class TestParseMovimientosTable:
     """Tests for parse_movimientos_table function."""
@@ -470,6 +489,7 @@ class TestParseMovimientosTable:
 # Integration Tests
 # ============================================================================
 
+
 class TestParserIntegration:
     """Integration tests combining listing and detail parsing."""
 
@@ -490,6 +510,7 @@ class TestParserIntegration:
 # ============================================================================
 # Edge Cases
 # ============================================================================
+
 
 class TestParserEdgeCases:
     """Edge case tests for parser robustness."""

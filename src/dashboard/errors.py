@@ -5,8 +5,6 @@ Provides consistent error handling with user-friendly messages
 and backend logging.
 """
 
-import traceback
-
 import streamlit as st
 
 from src.dashboard.logging_config import get_logger
@@ -33,7 +31,7 @@ def render_page_error(e: Exception, page_name: str) -> None:
     )
 
     st.error(
-        f"**Ocurrió un error al cargar la página \"{page_name}\".**\n\n"
+        f'**Ocurrió un error al cargar la página "{page_name}".**\n\n'
         f"Detalle: `{error_type}: {error_msg[:200]}`\n\n"
         "Si el problema persiste, contacte al administrador del sistema."
     )

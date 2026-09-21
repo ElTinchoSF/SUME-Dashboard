@@ -14,8 +14,6 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urljoin
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -29,11 +27,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RequestResult:
     """Result of an HTTP request."""
+
     url: str
     status_code: int
     duration_ms: float
     content: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class SUMEClient:
@@ -49,7 +48,7 @@ class SUMEClient:
     - Timeout handling: 30s default
     """
 
-    def __init__(self, config: Optional[ScraperConfig] = None):
+    def __init__(self, config: ScraperConfig | None = None):
         """
         Initialize the SUME client.
 
@@ -57,7 +56,7 @@ class SUMEClient:
             config: Scraper configuration. If None, loads from global settings.
         """
         self.config = config or get_scraper_config()
-        self._session: Optional[requests.Session] = None
+        self._session: requests.Session | None = None
         self._last_request_time: float = 0.0
         self._request_count: int = 0
 
@@ -86,12 +85,14 @@ class SUMEClient:
         session.mount("https://", adapter)
 
         # Set default headers
-        session.headers.update({
-            "User-Agent": self.config.user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
-            "Connection": "keep-alive",
-        })
+        session.headers.update(
+            {
+                "User-Agent": self.config.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
+                "Connection": "keep-alive",
+            }
+        )
 
         return session
 
@@ -103,7 +104,9 @@ class SUMEClient:
             logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s")
             time.sleep(sleep_time)
 
-    def _log_request(self, method: str, url: str, status_code: int, duration_ms: float, error: Optional[str] = None) -> None:
+    def _log_request(
+        self, method: str, url: str, status_code: int, duration_ms: float, error: str | None = None
+    ) -> None:
         """Log request details."""
         self._request_count += 1
         log_data = {
@@ -124,9 +127,9 @@ class SUMEClient:
         method: str,
         url: str,
         *,
-        params: Optional[dict] = None,
-        data: Optional[dict] = None,
-        timeout: Optional[int] = None,
+        params: dict | None = None,
+        data: dict | None = None,
+        timeout: int | None = None,
     ) -> RequestResult:
         """
         Make an HTTP request with retry logic and rate limiting.
@@ -170,7 +173,7 @@ class SUMEClient:
                 content=response.text,
             )
 
-        except requests.exceptions.Timeout as e:
+        except requests.exceptions.Timeout:
             duration_ms = (time.monotonic() - start_time) * 1000
             error_msg = f"Request timeout after {timeout}s"
             self._log_request(method, url, 0, duration_ms, error_msg)
@@ -198,8 +201,8 @@ class SUMEClient:
         self,
         method: str,
         url: str,
-        params: Optional[dict],
-        data: Optional[dict],
+        params: dict | None,
+        data: dict | None,
         timeout: int,
         original_start: float,
     ) -> RequestResult:
@@ -252,11 +255,11 @@ class SUMEClient:
             error=error_msg,
         )
 
-    def get(self, url: str, params: Optional[dict] = None) -> RequestResult:
+    def get(self, url: str, params: dict | None = None) -> RequestResult:
         """Make a GET request."""
         return self.request("GET", url, params=params)
 
-    def post(self, url: str, data: Optional[dict] = None, params: Optional[dict] = None) -> RequestResult:
+    def post(self, url: str, data: dict | None = None, params: dict | None = None) -> RequestResult:
         """Make a POST request."""
         return self.request("POST", url, params=params, data=data)
 
@@ -305,14 +308,15 @@ class SUMEClient:
 def get_scraper_config(faculty_code: str = "FBCB") -> ScraperConfig:
     """
     Load scraper configuration from global settings.
-    
+
     Args:
         faculty_code: Código de la unidad académica (default: "FBCB")
-    
+
     Returns:
         Configuración del scraper
     """
     from src.config import get_settings
+
     settings = get_settings()
     return ScraperConfig(
         faculty_code=faculty_code,

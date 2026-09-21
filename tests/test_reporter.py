@@ -10,22 +10,20 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 
 from src.analysis.reports import (
-    get_git_commit_hash,
     compute_data_hash,
-    get_report_version,
-    setup_jinja_env,
-    load_report_data,
-    render_template,
-    write_output,
-    generate_main_report,
     generate_concepto_report,
+    generate_main_report,
+    get_git_commit_hash,
+    get_report_version,
+    load_report_data,
     main,
+    render_template,
+    setup_jinja_env,
+    write_output,
 )
-from src.database.connection import get_connection, close_connection, set_connection_factory
 from src.database.schema import INIT_SQL
 
 
@@ -80,8 +78,18 @@ def temp_db():
         )
 
     circuitos = [
-        (json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2"]), "Concepto A", 5, 1),
-        (json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2"]), "Concepto B", 1, 1),
+        (
+            json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2"]),
+            "Concepto A",
+            5,
+            1,
+        ),
+        (
+            json.dumps(["Mesa de Entradas - FBCB", "Dependencia 1", "Dependencia 2"]),
+            "Concepto B",
+            1,
+            1,
+        ),
     ]
     for circ, conc, freq, modal in circuitos:
         conn.execute(
@@ -395,7 +403,10 @@ class TestMainCLI:
     def test_main_concepto(self, mock_generate_concepto, mock_get_conn, temp_db):
         mock_get_conn.return_value = temp_db
 
-        with patch("sys.argv", ["reports", "--output", "test.md", "--format", "markdown", "--concepto", "Concepto A"]):
+        with patch(
+            "sys.argv",
+            ["reports", "--output", "test.md", "--format", "markdown", "--concepto", "Concepto A"],
+        ):
             result = main()
 
         assert result == 0
@@ -450,8 +461,271 @@ class TestReporterGoldenFiles:
             assert "Mesa de Entradas - FBCB -> Dependencia 1 -> Dependencia 2" in content
 
 
+class TestPDFGeneration:
+    """Smoke tests for PDF report generation."""
+
+    def test_write_output_pdf_creates_file(self, temp_templates_dir):
+        """Test that PDF write_output creates a .pdf file (or .md fallback)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "test_report.pdf"
+            content = (
+                "# Test Report\n\nThis is a test.\n\n| Col1 | Col2 |\n|------|------|\n| A | B |"
+            )
+
+            write_output(content, output_path, "pdf")
+
+            # Either PDF or .md fallback should exist
+            assert output_path.exists() or output_path.with_suffix(".md").exists()
+
+    def test_write_output_pdf_with_tables(self, temp_templates_dir):
+        """Test PDF generation with markdown table content."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "table_report.pdf"
+            content = """# Reporte de Prueba
+
+## Sección 1
+
+| Concepto | Frecuencia | % |
+|----------|------------|---|
+| Gestión Alumno | 100 | 50% |
+| Gestión de Becas | 80 | 40% |
+| Trámites Docentes | 20 | 10% |
+
+## Sección 2
+
+Some text after the table.
+"""
+            write_output(content, output_path, "pdf")
+
+            # Should not raise — file or fallback exists
+            assert output_path.exists() or output_path.with_suffix(".md").exists()
+
+    def test_generate_main_report_pdf(self, temp_db, temp_templates_dir):
+        """Smoke test: generate_main_report with PDF format doesn't crash."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "main_report.pdf"
+
+            # Should not raise any exception
+            generate_main_report(
+                output_path=output_path,
+                format_type="pdf",
+                db=temp_db,
+                templates_dir=temp_templates_dir,
+            )
+
+            # Either PDF or .md fallback should exist
+            assert output_path.exists() or output_path.with_suffix(".md").exists()
+
+    def test_generate_concepto_report_pdf(self, temp_db, temp_templates_dir):
+        """Smoke test: generate_concepto_report with PDF format doesn't crash."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "concepto_report.pdf"
+
+            generate_concepto_report(
+                concepto="Concepto A",
+                output_path=output_path,
+                format_type="pdf",
+                db=temp_db,
+                templates_dir=temp_templates_dir,
+            )
+
+            assert output_path.exists() or output_path.with_suffix(".md").exists()
+
+    def test_pdf_content_not_empty(self, temp_templates_dir):
+        """Test that generated PDF (or fallback) is not empty."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "not_empty.pdf"
+            content = "# Hello World\n\nTest content."
+
+            write_output(content, output_path, "pdf")
+
+            # Check the file that was actually created
+            actual = output_path if output_path.exists() else output_path.with_suffix(".md")
+            assert actual.exists()
+            assert actual.stat().st_size > 0
+
+
+class TestTemplateRendering:
+    """Smoke tests that real templates render without errors."""
+
+    REAL_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+
+    def test_main_template_renders(self):
+        """Test that report_main.md.j2 renders without Jinja2 errors."""
+        env = setup_jinja_env(self.REAL_TEMPLATES_DIR)
+        template = env.get_template("report_main.md.j2")
+
+        context = {
+            "version": "2026-01-01.test.abc123",
+            "generated_at": "2026-01-01T10:00:00",
+            "conceptos_filter": None,
+            "concept_summaries": {
+                "Test Concepto": {
+                    "total_expedientes": 10,
+                    "primera_fecha": "2026-01-01",
+                    "ultima_fecha": "2026-12-31",
+                    "unique_circuits": 3,
+                    "modal_circuit": {
+                        "circuito": ["MDE", "Dep A", "Dep B"],
+                        "frecuencia": 5,
+                        "total_concepto": 10,
+                    },
+                }
+            },
+            "circuitos": [
+                {
+                    "concepto": "Test Concepto",
+                    "circuito_json": '["MDE","Dep A","Dep B"]',
+                    "frecuencia": 5,
+                    "es_mas_frecuente": True,
+                },
+                {
+                    "concepto": "Test Concepto",
+                    "circuito_json": '["MDE","Dep A","Dep C"]',
+                    "frecuencia": 3,
+                    "es_mas_frecuente": False,
+                },
+            ],
+            "step_statistics": [
+                {
+                    "concepto": "Test Concepto",
+                    "min_steps": 2,
+                    "max_steps": 4,
+                    "mean_steps": 3.0,
+                    "median_steps": 3.0,
+                    "mode_steps": 3,
+                    "std_steps": 0.5,
+                    "total_circuitos": 2,
+                    "total_expedientes": 10,
+                }
+            ],
+            "permanence_by_dependencia": [
+                {
+                    "dependencia": "Dep A",
+                    "count": 10,
+                    "mean_days": 2.5,
+                    "median_days": 2.0,
+                    "std_days": 1.0,
+                    "min_days": 1,
+                    "max_days": 5,
+                    "q25_days": 1.5,
+                    "q75_days": 3.5,
+                }
+            ],
+            "outliers": [],
+            "dependency_traffic": [
+                {
+                    "dependencia": "Dep A",
+                    "total_expedientes": 10,
+                    "pct_expedientes": 100.0,
+                    "total_movimientos": 20,
+                    "pct_movimientos": 50.0,
+                }
+            ],
+            "concept_distribution": [
+                {"concepto": "Test Concepto", "cantidad": 10, "porcentaje": 100.0}
+            ],
+            "monthly_trend": [],
+            "modal_circuits": {
+                "Test Concepto": {
+                    "circuito": ["MDE", "Dep A", "Dep B"],
+                    "frecuencia": 5,
+                    "total_concepto": 10,
+                }
+            },
+        }
+
+        result = template.render(**context)
+
+        assert "Informe ISO 9001" in result
+        assert "Test Concepto" in result
+
+    def test_concepto_template_renders(self):
+        """Test that report_concepto.md.j2 renders without Jinja2 errors."""
+        env = setup_jinja_env(self.REAL_TEMPLATES_DIR)
+        template = env.get_template("report_concepto.md.j2")
+
+        context = {
+            "version": "2026-01-01.test.abc123",
+            "generated_at": "2026-01-01T10:00:00",
+            "single_concepto": "Test Concepto",
+            "concept_summaries": {
+                "Test Concepto": {
+                    "total_expedientes": 10,
+                    "unique_circuits": 3,
+                    "primera_fecha": "2026-01-01",
+                    "ultima_fecha": "2026-12-31",
+                    "modal_circuit": {
+                        "circuito": ["MDE", "Dep A", "Dep B"],
+                        "frecuencia": 5,
+                        "total_concepto": 10,
+                    },
+                }
+            },
+            "circuitos": [
+                {
+                    "concepto": "Test Concepto",
+                    "circuito_json": '["MDE","Dep A","Dep B"]',
+                    "frecuencia": 5,
+                    "es_mas_frecuente": True,
+                },
+            ],
+            "step_statistics": [
+                {
+                    "concepto": "Test Concepto",
+                    "min_steps": 2,
+                    "max_steps": 4,
+                    "mean_steps": 3.0,
+                    "median_steps": 3.0,
+                    "mode_steps": 3,
+                    "std_steps": 0.5,
+                    "total_circuitos": 1,
+                    "total_expedientes": 10,
+                }
+            ],
+            "outliers": [],
+            "movimientos": [
+                {
+                    "numero": "EXP-001",
+                    "concepto": "Test Concepto",
+                    "orden": 1,
+                    "fecha_recepcion": "2026-01-01",
+                    "dependencia": "MDE",
+                },
+                {
+                    "numero": "EXP-001",
+                    "concepto": "Test Concepto",
+                    "orden": 2,
+                    "fecha_recepcion": "2026-01-02",
+                    "dependencia": "Dep A",
+                },
+                {
+                    "numero": "EXP-001",
+                    "concepto": "Test Concepto",
+                    "orden": 3,
+                    "fecha_recepcion": "2026-01-03",
+                    "dependencia": "Dep B",
+                },
+            ],
+            "permanence_by_dependencia": [],
+            "dependency_traffic": [],
+            "modal_circuits": {
+                "Test Concepto": {
+                    "circuito": ["MDE", "Dep A", "Dep B"],
+                    "frecuencia": 5,
+                    "total_expedientes": 10,
+                }
+            },
+        }
+
+        result = template.render(**context)
+
+        assert "Hoja de Evidencia ISO 9001" in result
+        assert "Test Concepto" in result
+        assert "Circuito Modal" in result
+
+
 # Import sqlite3 at the top for the test file
-import sqlite3
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

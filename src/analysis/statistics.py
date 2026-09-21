@@ -11,20 +11,20 @@ Implements statistical analysis of administrative circuits including:
 
 import json
 import logging
-from typing import Any
+import sqlite3
 
 import numpy as np
 import pandas as pd
-import sqlite3
 
 from src.config import get_settings
 from src.database.connection import get_connection
-from src.database.models import CircuitoDict
 
 logger = logging.getLogger(__name__)
 
 
-def compute_step_statistics(freq_df: pd.DataFrame | None = None, db: sqlite3.Connection | None = None) -> pd.DataFrame:
+def compute_step_statistics(
+    freq_df: pd.DataFrame | None = None, db: sqlite3.Connection | None = None
+) -> pd.DataFrame:
     """
     Compute step count statistics per concepto.
 
@@ -52,10 +52,19 @@ def compute_step_statistics(freq_df: pd.DataFrame | None = None, db: sqlite3.Con
 
     if freq_df.empty:
         logger.warning("No circuit data available for step statistics")
-        return pd.DataFrame(columns=[
-            "concepto", "min_steps", "max_steps", "mean_steps", "median_steps",
-            "mode_steps", "std_steps", "total_circuitos", "total_expedientes"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "concepto",
+                "min_steps",
+                "max_steps",
+                "mean_steps",
+                "median_steps",
+                "mode_steps",
+                "std_steps",
+                "total_circuitos",
+                "total_expedientes",
+            ]
+        )
 
     # Compute step count for each circuit
     def count_steps(circuito_json: str) -> int:
@@ -71,13 +80,25 @@ def compute_step_statistics(freq_df: pd.DataFrame | None = None, db: sqlite3.Con
     # Expand by frequency to get per-expediente step counts
     expanded_rows = []
     for _, row in freq_df.iterrows():
-        expanded_rows.extend([{"concepto": row["concepto"], "step_count": row["step_count"]}] * int(row["frecuencia"]))
+        expanded_rows.extend(
+            [{"concepto": row["concepto"], "step_count": row["step_count"]}]
+            * int(row["frecuencia"])
+        )
 
     if not expanded_rows:
-        return pd.DataFrame(columns=[
-            "concepto", "min_steps", "max_steps", "mean_steps", "median_steps",
-            "mode_steps", "std_steps", "total_circuitos", "total_expedientes"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "concepto",
+                "min_steps",
+                "max_steps",
+                "mean_steps",
+                "median_steps",
+                "mode_steps",
+                "std_steps",
+                "total_circuitos",
+                "total_expedientes",
+            ]
+        )
 
     expanded_df = pd.DataFrame(expanded_rows)
 
@@ -91,17 +112,21 @@ def compute_step_statistics(freq_df: pd.DataFrame | None = None, db: sqlite3.Con
         mode_result = pd.Series(step_counts).mode()
         mode_val = int(mode_result.iloc[0]) if not mode_result.empty else 0
 
-        stats_list.append({
-            "concepto": concepto,
-            "min_steps": int(step_counts.min()),
-            "max_steps": int(step_counts.max()),
-            "mean_steps": float(step_counts.mean()),
-            "median_steps": float(np.median(step_counts)),
-            "mode_steps": mode_val,
-            "std_steps": float(step_counts.std()) if len(step_counts) > 1 else 0.0,
-            "total_circuitos": int(freq_df[freq_df["concepto"] == concepto]["frecuencia"].count()),
-            "total_expedientes": total_expedientes,
-        })
+        stats_list.append(
+            {
+                "concepto": concepto,
+                "min_steps": int(step_counts.min()),
+                "max_steps": int(step_counts.max()),
+                "mean_steps": float(step_counts.mean()),
+                "median_steps": float(np.median(step_counts)),
+                "mode_steps": mode_val,
+                "std_steps": float(step_counts.std()) if len(step_counts) > 1 else 0.0,
+                "total_circuitos": int(
+                    freq_df[freq_df["concepto"] == concepto]["frecuencia"].count()
+                ),
+                "total_expedientes": total_expedientes,
+            }
+        )
 
     result = pd.DataFrame(stats_list).sort_values("concepto").reset_index(drop=True)
     logger.info(f"Computed step statistics for {len(result)} conceptos")
@@ -147,10 +172,18 @@ def compute_permanence_times(db: sqlite3.Connection | None = None) -> pd.DataFra
 
     if df.empty:
         logger.warning("No movimientos found for permanence calculation")
-        return pd.DataFrame(columns=[
-            "expediente_id", "numero", "concepto", "orden", "dependencia",
-            "fecha_recepcion", "permanence_days", "is_final_step"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "expediente_id",
+                "numero",
+                "concepto",
+                "orden",
+                "dependencia",
+                "fecha_recepcion",
+                "permanence_days",
+                "is_final_step",
+            ]
+        )
 
     # Ensure fecha_recepcion is datetime
     df["fecha_recepcion"] = pd.to_datetime(df["fecha_recepcion"], errors="coerce")
@@ -162,7 +195,7 @@ def compute_permanence_times(db: sqlite3.Connection | None = None) -> pd.DataFra
         first_row = group.iloc[0]
 
         for i, row in group.iterrows():
-            is_final = (i == len(group) - 1)
+            is_final = i == len(group) - 1
 
             if is_final:
                 permanence_days = None
@@ -174,23 +207,29 @@ def compute_permanence_times(db: sqlite3.Connection | None = None) -> pd.DataFra
                 else:
                     permanence_days = None
 
-            result_rows.append({
-                "expediente_id": int(expediente_id),
-                "numero": first_row["numero"],
-                "concepto": first_row["concepto"],
-                "orden": int(row["orden"]),
-                "dependencia": row["dependencia"],
-                "fecha_recepcion": row["fecha_recepcion"],
-                "permanence_days": permanence_days,
-                "is_final_step": is_final,
-            })
+            result_rows.append(
+                {
+                    "expediente_id": int(expediente_id),
+                    "numero": first_row["numero"],
+                    "concepto": first_row["concepto"],
+                    "orden": int(row["orden"]),
+                    "dependencia": row["dependencia"],
+                    "fecha_recepcion": row["fecha_recepcion"],
+                    "permanence_days": permanence_days,
+                    "is_final_step": is_final,
+                }
+            )
 
     result = pd.DataFrame(result_rows)
-    logger.info(f"Computed permanence times for {len(result)} movement steps across {df['expediente_id'].nunique()} expedientes")
+    logger.info(
+        f"Computed permanence times for {len(result)} movement steps across {df['expediente_id'].nunique()} expedientes"
+    )
     return result
 
 
-def compute_permanence_stats_by_dependencia(permanence_df: pd.DataFrame | None = None, db: sqlite3.Connection | None = None) -> pd.DataFrame:
+def compute_permanence_stats_by_dependencia(
+    permanence_df: pd.DataFrame | None = None, db: sqlite3.Connection | None = None
+) -> pd.DataFrame:
     """
     Compute permanence statistics grouped by dependencia.
 
@@ -208,10 +247,19 @@ def compute_permanence_stats_by_dependencia(permanence_df: pd.DataFrame | None =
         permanence_df = compute_permanence_times(db)
 
     if permanence_df.empty:
-        return pd.DataFrame(columns=[
-            "dependencia", "count", "mean_days", "median_days", "std_days",
-            "min_days", "max_days", "q25_days", "q75_days"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "dependencia",
+                "count",
+                "mean_days",
+                "median_days",
+                "std_days",
+                "min_days",
+                "max_days",
+                "q25_days",
+                "q75_days",
+            ]
+        )
 
     # Filter out final steps (None permanence) and NaN
     valid_permanence = permanence_df[
@@ -219,25 +267,36 @@ def compute_permanence_stats_by_dependencia(permanence_df: pd.DataFrame | None =
     ].copy()
 
     if valid_permanence.empty:
-        return pd.DataFrame(columns=[
-            "dependencia", "count", "mean_days", "median_days", "std_days",
-            "min_days", "max_days", "q25_days", "q75_days"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "dependencia",
+                "count",
+                "mean_days",
+                "median_days",
+                "std_days",
+                "min_days",
+                "max_days",
+                "q25_days",
+                "q75_days",
+            ]
+        )
 
     stats_list = []
     for dependencia, group in valid_permanence.groupby("dependencia"):
         days = group["permanence_days"].values
-        stats_list.append({
-            "dependencia": dependencia,
-            "count": len(days),
-            "mean_days": float(days.mean()),
-            "median_days": float(np.median(days)),
-            "std_days": float(days.std()) if len(days) > 1 else 0.0,
-            "min_days": int(days.min()),
-            "max_days": int(days.max()),
-            "q25_days": float(np.percentile(days, 25)),
-            "q75_days": float(np.percentile(days, 75)),
-        })
+        stats_list.append(
+            {
+                "dependencia": dependencia,
+                "count": len(days),
+                "mean_days": float(days.mean()),
+                "median_days": float(np.median(days)),
+                "std_days": float(days.std()) if len(days) > 1 else 0.0,
+                "min_days": int(days.min()),
+                "max_days": int(days.max()),
+                "q25_days": float(np.percentile(days, 25)),
+                "q75_days": float(np.percentile(days, 75)),
+            }
+        )
 
     result = pd.DataFrame(stats_list).sort_values("count", ascending=False).reset_index(drop=True)
     logger.info(f"Computed permanence stats for {len(result)} dependencias")
@@ -248,7 +307,7 @@ def detect_outliers(
     freq_df: pd.DataFrame | None = None,
     step_stats_df: pd.DataFrame | None = None,
     permanence_df: pd.DataFrame | None = None,
-    db: sqlite3.Connection | None = None
+    db: sqlite3.Connection | None = None,
 ) -> pd.DataFrame:
     """
     Detect outlier expedientes/circuits based on frequency and structural criteria.
@@ -283,10 +342,17 @@ def detect_outliers(
 
     if freq_df.empty:
         logger.warning("No circuit data for outlier detection")
-        return pd.DataFrame(columns=[
-            "circuito_json", "concepto", "frecuencia", "es_mas_frecuente",
-            "outlier_type", "outlier_reason", "step_count"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "circuito_json",
+                "concepto",
+                "frecuencia",
+                "es_mas_frecuente",
+                "outlier_type",
+                "outlier_reason",
+                "step_count",
+            ]
+        )
 
     if step_stats_df is None:
         step_stats_df = compute_step_statistics(freq_df, db)
@@ -340,32 +406,38 @@ def detect_outliers(
         # Frequency outlier: < 5% of total for this concepto
         if frecuencia / total_concepto < freq_threshold:
             outlier_type = "frequency"
-            outlier_reason = f"Frequency {frecuencia}/{total_concepto} ({frecuencia/total_concepto*100:.1f}%) below {freq_threshold*100:.0f}% threshold"
+            outlier_reason = f"Frequency {frecuencia}/{total_concepto} ({frecuencia / total_concepto * 100:.1f}%) below {freq_threshold * 100:.0f}% threshold"
 
         # Structural outlier: step count > 2.5x modal
         elif step_count > modal_step_count * step_multiplier:
             outlier_type = "structural_steps"
-            outlier_reason = f"Step count {step_count} exceeds {step_multiplier}x modal ({modal_step_count})"
+            outlier_reason = (
+                f"Step count {step_count} exceeds {step_multiplier}x modal ({modal_step_count})"
+            )
 
         # Structural outlier: loops detected
         elif has_loop_flag:
             outlier_type = "structural_loop"
             outlier_reason = "Circuit contains repeated dependencies (loop detected)"
 
-        outlier_rows.append({
-            "circuito_json": row["circuito"],
-            "concepto": concepto,
-            "frecuencia": frecuencia,
-            "es_mas_frecuente": bool(row.get("es_mas_frecuente", False)),
-            "outlier_type": outlier_type,
-            "outlier_reason": outlier_reason,
-            "step_count": step_count,
-        })
+        outlier_rows.append(
+            {
+                "circuito_json": row["circuito"],
+                "concepto": concepto,
+                "frecuencia": frecuencia,
+                "es_mas_frecuente": bool(row.get("es_mas_frecuente", False)),
+                "outlier_type": outlier_type,
+                "outlier_reason": outlier_reason,
+                "step_count": step_count,
+            }
+        )
 
     result = pd.DataFrame(outlier_rows)
 
     # Summary log
-    outlier_counts = result[result["outlier_type"] != "none"]["outlier_type"].value_counts().to_dict()
+    outlier_counts = (
+        result[result["outlier_type"] != "none"]["outlier_type"].value_counts().to_dict()
+    )
     logger.info(f"Outlier detection complete: {outlier_counts}")
 
     return result
@@ -405,16 +477,21 @@ def compute_dependency_traffic(db: sqlite3.Connection | None = None) -> pd.DataF
 
     if df.empty:
         logger.warning("No movement data for dependency traffic")
-        return pd.DataFrame(columns=[
-            "dependencia", "total_expedientes", "total_movimientos",
-            "pct_expedientes", "pct_movimientos"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "dependencia",
+                "total_expedientes",
+                "total_movimientos",
+                "pct_expedientes",
+                "pct_movimientos",
+            ]
+        )
 
     # Get total unique expedientes from the database (not sum of per-dependency counts)
     total_query = "SELECT COUNT(DISTINCT expediente_id) as total FROM movimientos"
     total_df = pd.read_sql_query(total_query, db)
     total_expedientes_all = total_df["total"].iloc[0]
-    
+
     total_movimientos_all = df["total_movimientos"].sum()
 
     df["pct_expedientes"] = (df["total_expedientes"] / total_expedientes_all * 100).round(2)
@@ -485,8 +562,12 @@ def run_full_statistics_analysis(db: sqlite3.Connection | None = None) -> dict[s
 
     results["step_statistics"] = compute_step_statistics(freq_df, db)
     results["permanence_times"] = compute_permanence_times(db)
-    results["permanence_by_dependencia"] = compute_permanence_stats_by_dependencia(results["permanence_times"], db)
-    results["outliers"] = detect_outliers(freq_df, results["step_statistics"], results["permanence_times"], db)
+    results["permanence_by_dependencia"] = compute_permanence_stats_by_dependencia(
+        results["permanence_times"], db
+    )
+    results["outliers"] = detect_outliers(
+        freq_df, results["step_statistics"], results["permanence_times"], db
+    )
     results["dependency_traffic"] = compute_dependency_traffic(db)
     results["concept_distribution"] = compute_concept_distribution(db)
 

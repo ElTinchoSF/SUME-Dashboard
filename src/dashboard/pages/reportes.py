@@ -9,24 +9,25 @@ Report generation UI with:
 - Markdown preview
 """
 
-import streamlit as st
+import re
 import subprocess
 import sys
-import re
-import tempfile
-import os
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
 
-from src.dashboard.data import load_conceptos, FilterState
-from src.dashboard.components.filters import render_filter_summary
+import streamlit as st
+
 from src.config import get_settings
+from src.dashboard.components.filters import render_filter_summary
+from src.dashboard.data import FilterState, load_conceptos
 
 
 def render_reportes_page(filters: FilterState) -> None:
     """Render the Reportes generation page."""
     st.header("📑 Reportes ISO 9001")
+    st.caption(
+        "Generación de informes de evidencia: Markdown, PDF o Excel con versionado automático (fecha + commit + hash de datos)."
+    )
     render_filter_summary(filters)
 
     # Load available conceptos
@@ -117,7 +118,7 @@ def render_reportes_page(filters: FilterState) -> None:
         st.info("Genere un reporte para ver la vista previa aquí.")
 
 
-def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_label: str) -> None:
+def _generate_report(format_option: str, conceptos: list[str] | None, scope_label: str) -> None:
     """
     Generate report using the analysis CLI.
 
@@ -138,7 +139,7 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     ext_map = {"markdown": "md", "pdf": "pdf", "excel": "xlsx"}
     ext = ext_map.get(fmt, "md")
-    safe_scope = re.sub(r'[^a-zA-Z0-9_-]', '_', scope_label).strip('_')
+    safe_scope = re.sub(r"[^a-zA-Z0-9_-]", "_", scope_label).strip("_")
     output_filename = f"reporte_iso9001_{safe_scope}_{timestamp}.{ext}"
 
     settings = get_settings()
@@ -148,9 +149,13 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
 
     # Build CLI command
     cmd = [
-        sys.executable, "-m", "src.analysis.reports",
-        "--output", str(output_path),
-        "--format", fmt,
+        sys.executable,
+        "-m",
+        "src.analysis.reports",
+        "--output",
+        str(output_path),
+        "--format",
+        fmt,
     ]
 
     if conceptos:
@@ -168,6 +173,7 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
 
         # Run the command — inherit env so DYLD_LIBRARY_PATH reaches weasyprint
         import os
+
         env = {**os.environ, "DYLD_LIBRARY_PATH": "/opt/homebrew/lib"}
         progress_bar.progress(25)
         result = subprocess.run(
@@ -192,7 +198,9 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
                 md_fallback = output_path.with_suffix(".md")
                 if md_fallback.exists():
                     actual_path = md_fallback
-                    st.warning("⚠️ weasyprint no pudo generar el PDF. Se generó la versión Markdown.")
+                    st.warning(
+                        "⚠️ weasyprint no pudo generar el PDF. Se generó la versión Markdown."
+                    )
                 else:
                     st.error(f"❌ No se encontró el archivo generado: {output_path}")
                     return
@@ -203,9 +211,11 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
             st.success(f"✅ Reporte generado: {actual_path.name}")
 
             # Store for preview — always load markdown for preview
-            md_for_preview = actual_path if actual_path.suffix == ".md" else actual_path.with_suffix(".md")
+            md_for_preview = (
+                actual_path if actual_path.suffix == ".md" else actual_path.with_suffix(".md")
+            )
             if md_for_preview.exists():
-                with open(md_for_preview, "r", encoding="utf-8") as f:
+                with open(md_for_preview, encoding="utf-8") as f:
                     st.session_state["last_report_md"] = f.read()
                 st.session_state["last_report_path"] = str(md_for_preview)
                 st.session_state["last_report_format"] = "markdown"
@@ -254,7 +264,9 @@ def _get_mime_type(fmt: str) -> str:
 
 
 # Alternative: Direct function call (if reporter module exposes a function)
-def _generate_report_direct(format_option: str, conceptos: Optional[list[str]], scope_label: str) -> None:
+def _generate_report_direct(
+    format_option: str, conceptos: list[str] | None, scope_label: str
+) -> None:
     """
     Alternative: Generate report by calling reporter functions directly.
     This avoids subprocess overhead but requires the reporter module to have a callable API.

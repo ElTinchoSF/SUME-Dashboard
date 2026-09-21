@@ -11,7 +11,7 @@ __description__ = "SUME Dashboard - Análisis de Circuitos Administrativos"
 
 # Package-level exports
 __all__ = [
-    "__version__",
     "__author__",
     "__description__",
+    "__version__",
 ]

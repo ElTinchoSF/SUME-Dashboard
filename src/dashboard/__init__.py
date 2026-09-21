@@ -8,11 +8,11 @@ exploring expediente patterns, and generating ISO 9001 evidence reports.
 __version__ = "1.0.0"
 __all__ = [
     "app",
-    "data",
-    "components.filters",
     "components.charts",
-    "pages.overview",
-    "pages.conceptos",
+    "components.filters",
+    "data",
     "pages.circuitos",
+    "pages.conceptos",
+    "pages.overview",
     "pages.reportes",
 ]

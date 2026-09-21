@@ -7,23 +7,22 @@ Cache is invalidated when the database file modification time changes.
 """
 
 import json
-import os
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import streamlit as st
-import sqlite3
 
 from src.config import get_settings
-from src.database.connection import get_connection
 from src.dashboard.logging_config import get_logger
+from src.database.connection import get_connection
 
 logger = get_logger("data")
 
 
-def _get_data_year_range() -> tuple[Optional[int], Optional[int]]:
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_data_year_range() -> tuple[int | None, int | None]:
     """
     Get the min and max years from the database.
 
@@ -47,7 +46,7 @@ def _get_data_year_range() -> tuple[Optional[int], Optional[int]]:
 class FilterState:
     """Global filter state for dashboard queries."""
 
-    date_range: tuple[Optional[str], Optional[str]] = (None, None)
+    date_range: tuple[str | None, str | None] = (None, None)
     conceptos: tuple[str, ...] = ()
     dependencias: tuple[str, ...] = ()
     asuntos: tuple[str, ...] = ()
@@ -159,7 +158,7 @@ def load_expedientes(filters: FilterState) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando circuitos...")
-def load_circuitos(concepto: Optional[str] = None, filters: Optional[FilterState] = None) -> pd.DataFrame:
+def load_circuitos(concepto: str | None = None, filters: FilterState | None = None) -> pd.DataFrame:
     """
     Load circuitos with optional concepto and date filters.
 
@@ -176,7 +175,9 @@ def load_circuitos(concepto: Optional[str] = None, filters: Optional[FilterState
     db = get_connection()
 
     # If filters are applied (especially date), re-compute circuits on-the-fly
-    if filters and (filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias):
+    if filters and (
+        filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias
+    ):
         return _compute_circuitos_with_filters(db, concepto, filters)
 
     # No filters: use pre-computed circuitos table
@@ -200,7 +201,7 @@ def load_circuitos(concepto: Optional[str] = None, filters: Optional[FilterState
 
 def _compute_circuitos_with_filters(
     db: sqlite3.Connection,
-    concepto: Optional[str],
+    concepto: str | None,
     filters: FilterState,
 ) -> pd.DataFrame:
     """
@@ -208,7 +209,7 @@ def _compute_circuitos_with_filters(
 
     This ensures circuits reflect only expedientes within the date range.
     """
-    from src.analysis.circuits import reconstruct_circuit, identify_modal_circuits
+    from src.analysis.circuits import identify_modal_circuits, reconstruct_circuit
 
     # Build WHERE clause for filters
     where_clauses = []
@@ -281,8 +282,18 @@ def _compute_circuitos_with_filters(
     df = pd.read_sql_query(query, db, params=params)
 
     if df.empty:
-        return pd.DataFrame(columns=["id", "circuito", "circuito_json", "circuito_parsed",
-                                     "concepto", "frecuencia", "es_mas_frecuente", "step_count"])
+        return pd.DataFrame(
+            columns=[
+                "id",
+                "circuito",
+                "circuito_json",
+                "circuito_parsed",
+                "concepto",
+                "frecuencia",
+                "es_mas_frecuente",
+                "step_count",
+            ]
+        )
 
     # Group by expediente to reconstruct circuits
     circuits_by_concepto: dict[str, list[list[str]]] = {}
@@ -302,11 +313,13 @@ def _compute_circuitos_with_filters(
         movimientos = []
         for _, row in group.iterrows():
             if pd.notna(row["orden"]):
-                movimientos.append({
-                    "orden": int(row["orden"]),
-                    "fecha_recepcion": row["fecha_recepcion"],
-                    "dependencia": row["dependencia"],
-                })
+                movimientos.append(
+                    {
+                        "orden": int(row["orden"]),
+                        "fecha_recepcion": row["fecha_recepcion"],
+                        "dependencia": row["dependencia"],
+                    }
+                )
 
         circuit = reconstruct_circuit(expediente, movimientos)
 
@@ -323,12 +336,14 @@ def _compute_circuitos_with_filters(
             circuit_counts[circuit_key] = circuit_counts.get(circuit_key, 0) + 1
 
         for circuit_json_str, freq in circuit_counts.items():
-            rows.append({
-                "circuito": circuit_json_str,
-                "concepto": concepto_name,
-                "frecuencia": freq,
-                "es_mas_frecuente": False,
-            })
+            rows.append(
+                {
+                    "circuito": circuit_json_str,
+                    "concepto": concepto_name,
+                    "frecuencia": freq,
+                    "es_mas_frecuente": False,
+                }
+            )
 
     result_df = pd.DataFrame(rows)
 
@@ -353,7 +368,9 @@ def _compute_circuitos_with_filters(
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando estadísticas de pasos...")
-def load_step_stats(concepto: Optional[str] = None, filters: Optional[FilterState] = None) -> pd.DataFrame:
+def load_step_stats(
+    concepto: str | None = None, filters: FilterState | None = None
+) -> pd.DataFrame:
     """
     Load step count statistics per concepto.
 
@@ -368,13 +385,28 @@ def load_step_stats(concepto: Optional[str] = None, filters: Optional[FilterStat
         median_steps, mode_steps, std_steps, total_circuitos, total_expedientes
     """
     # If filters are applied, use filtered circuits
-    if filters and (filters.date_range[0] or filters.date_range[1] or filters.conceptos or filters.dependencias or filters.asuntos):
+    if filters and (
+        filters.date_range[0]
+        or filters.date_range[1]
+        or filters.conceptos
+        or filters.dependencias
+        or filters.asuntos
+    ):
         circuitos_df = load_circuitos(concepto, filters)
         if circuitos_df.empty:
-            return pd.DataFrame(columns=[
-                "concepto", "min_steps", "max_steps", "mean_steps", "median_steps",
-                "mode_steps", "std_steps", "total_circuitos", "total_expedientes"
-            ])
+            return pd.DataFrame(
+                columns=[
+                    "concepto",
+                    "min_steps",
+                    "max_steps",
+                    "mean_steps",
+                    "median_steps",
+                    "mode_steps",
+                    "std_steps",
+                    "total_circuitos",
+                    "total_expedientes",
+                ]
+            )
         # Build freq_df from circuitos
         freq_df = circuitos_df[["circuito", "concepto", "frecuencia"]].copy()
         return _compute_step_stats_from_freq(freq_df)
@@ -389,10 +421,19 @@ def load_step_stats(concepto: Optional[str] = None, filters: Optional[FilterStat
     freq_df = pd.read_sql_query(query, db)
 
     if freq_df.empty:
-        return pd.DataFrame(columns=[
-            "concepto", "min_steps", "max_steps", "mean_steps", "median_steps",
-            "mode_steps", "std_steps", "total_circuitos", "total_expedientes"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "concepto",
+                "min_steps",
+                "max_steps",
+                "mean_steps",
+                "median_steps",
+                "mode_steps",
+                "std_steps",
+                "total_circuitos",
+                "total_expedientes",
+            ]
+        )
 
     return _compute_step_stats_from_freq(freq_df)
 
@@ -421,13 +462,25 @@ def _compute_step_stats_from_freq(freq_df: pd.DataFrame) -> pd.DataFrame:
     # Expand by frequency
     expanded_rows = []
     for _, row in freq_df.iterrows():
-        expanded_rows.extend([{"concepto": row["concepto"], "step_count": row["step_count"]}] * int(row["frecuencia"]))
+        expanded_rows.extend(
+            [{"concepto": row["concepto"], "step_count": row["step_count"]}]
+            * int(row["frecuencia"])
+        )
 
     if not expanded_rows:
-        return pd.DataFrame(columns=[
-            "concepto", "min_steps", "max_steps", "mean_steps", "median_steps",
-            "mode_steps", "std_steps", "total_circuitos", "total_expedientes"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "concepto",
+                "min_steps",
+                "max_steps",
+                "mean_steps",
+                "median_steps",
+                "mode_steps",
+                "std_steps",
+                "total_circuitos",
+                "total_expedientes",
+            ]
+        )
 
     expanded_df = pd.DataFrame(expanded_rows)
 
@@ -439,23 +492,29 @@ def _compute_step_stats_from_freq(freq_df: pd.DataFrame) -> pd.DataFrame:
         mode_result = pd.Series(step_counts).mode()
         mode_val = int(mode_result.iloc[0]) if not mode_result.empty else 0
 
-        stats_list.append({
-            "concepto": concepto,
-            "min_steps": int(step_counts.min()),
-            "max_steps": int(step_counts.max()),
-            "mean_steps": float(step_counts.mean()),
-            "median_steps": float(np.median(step_counts)),
-            "mode_steps": mode_val,
-            "std_steps": float(step_counts.std()) if len(step_counts) > 1 else 0.0,
-            "total_circuitos": int(freq_df[freq_df["concepto"] == concepto]["frecuencia"].count()),
-            "total_expedientes": total_expedientes,
-        })
+        stats_list.append(
+            {
+                "concepto": concepto,
+                "min_steps": int(step_counts.min()),
+                "max_steps": int(step_counts.max()),
+                "mean_steps": float(step_counts.mean()),
+                "median_steps": float(np.median(step_counts)),
+                "mode_steps": mode_val,
+                "std_steps": float(step_counts.std()) if len(step_counts) > 1 else 0.0,
+                "total_circuitos": int(
+                    freq_df[freq_df["concepto"] == concepto]["frecuencia"].count()
+                ),
+                "total_expedientes": total_expedientes,
+            }
+        )
 
     return pd.DataFrame(stats_list).sort_values("concepto").reset_index(drop=True)
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando tiempos de permanencia...")
-def load_permanence(concepto: Optional[str] = None, filters: Optional[FilterState] = None) -> pd.DataFrame:
+def load_permanence(
+    concepto: str | None = None, filters: FilterState | None = None
+) -> pd.DataFrame:
     """
     Load permanence times between consecutive steps.
 
@@ -540,10 +599,18 @@ def load_permanence(concepto: Optional[str] = None, filters: Optional[FilterStat
     df = pd.read_sql_query(query, db, params=params)
 
     if df.empty:
-        return pd.DataFrame(columns=[
-            "expediente_id", "numero", "concepto", "orden", "dependencia",
-            "fecha_recepcion", "permanence_days", "is_final_step"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "expediente_id",
+                "numero",
+                "concepto",
+                "orden",
+                "dependencia",
+                "fecha_recepcion",
+                "permanence_days",
+                "is_final_step",
+            ]
+        )
 
     df["fecha_recepcion"] = pd.to_datetime(df["fecha_recepcion"], errors="coerce")
 
@@ -553,7 +620,7 @@ def load_permanence(concepto: Optional[str] = None, filters: Optional[FilterStat
         first_row = group.iloc[0]
 
         for i, row in group.iterrows():
-            is_final = (i == len(group) - 1)
+            is_final = i == len(group) - 1
 
             if is_final:
                 permanence_days = None
@@ -565,16 +632,18 @@ def load_permanence(concepto: Optional[str] = None, filters: Optional[FilterStat
                 else:
                     permanence_days = None
 
-            result_rows.append({
-                "expediente_id": int(expediente_id),
-                "numero": first_row["numero"],
-                "concepto": first_row["concepto"],
-                "orden": int(row["orden"]),
-                "dependencia": row["dependencia"],
-                "fecha_recepcion": row["fecha_recepcion"],
-                "permanence_days": permanence_days,
-                "is_final_step": is_final,
-            })
+            result_rows.append(
+                {
+                    "expediente_id": int(expediente_id),
+                    "numero": first_row["numero"],
+                    "concepto": first_row["concepto"],
+                    "orden": int(row["orden"]),
+                    "dependencia": row["dependencia"],
+                    "fecha_recepcion": row["fecha_recepcion"],
+                    "permanence_days": permanence_days,
+                    "is_final_step": is_final,
+                }
+            )
 
     return pd.DataFrame(result_rows)
 
@@ -607,7 +676,7 @@ def load_conceptos() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner="Cargando asuntos...")
-def load_asuntos(concepto: Optional[str] = None) -> pd.DataFrame:
+def load_asuntos(concepto: str | None = None) -> pd.DataFrame:
     """
     Load asuntos for a given concepto (or all if None).
 
@@ -642,6 +711,7 @@ def load_asuntos(concepto: Optional[str] = None) -> pd.DataFrame:
     return pd.read_sql_query(query, db, params=params)
 
 
+@st.cache_data(ttl=300, show_spinner="Cargando distribución de asuntos...")
 def load_asunto_distribution(concepto: str, filters: FilterState) -> pd.DataFrame:
     """
     Load asunto distribution for a concepto, respecting all active filters.
@@ -699,6 +769,7 @@ def ensure_asuntos_populated() -> bool:
         # Table is empty, populate from patterns
         try:
             from src.analysis.asuntos import populate_asuntos_table
+
             populate_asuntos_table()
         except Exception as e:
             logger.warning("Could not populate asuntos: %s", e)
@@ -724,7 +795,11 @@ def load_dependency_traffic(filters: FilterState) -> pd.DataFrame:
     where_clause, params = filters.to_sql_where()
 
     # Modify where clause to work with movimientos table
-    where_clause = where_clause.replace("e.fecha_alta", "e.fecha_alta").replace("e.concepto", "e.concepto").replace("e.id", "e.id")
+    where_clause = (
+        where_clause.replace("e.fecha_alta", "e.fecha_alta")
+        .replace("e.concepto", "e.concepto")
+        .replace("e.id", "e.id")
+    )
 
     query = f"""
         SELECT
@@ -741,10 +816,15 @@ def load_dependency_traffic(filters: FilterState) -> pd.DataFrame:
     df = pd.read_sql_query(query, db, params=params)
 
     if df.empty:
-        return pd.DataFrame(columns=[
-            "dependencia", "total_expedientes", "total_movimientos",
-            "pct_expedientes", "pct_movimientos"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "dependencia",
+                "total_expedientes",
+                "total_movimientos",
+                "pct_expedientes",
+                "pct_movimientos",
+            ]
+        )
 
     total_expedientes_all = df["total_expedientes"].sum()
     total_movimientos_all = df["total_movimientos"].sum()

@@ -14,17 +14,16 @@ import pandas as pd
 import pytest
 
 from src.analysis.circuits import (
-    reconstruct_circuit,
+    _circuit_to_json,
+    _json_to_circuit,
     compute_circuit_frequencies,
     identify_modal_circuits,
     persist_circuit_frequencies,
+    reconstruct_circuit,
     run_full_circuit_analysis,
-    _circuit_to_json,
-    _json_to_circuit,
 )
-from src.database.connection import get_connection, close_connection, set_connection_factory
-from src.database.schema import INIT_SQL
 from src.database.models import ExpedienteDict, MovimientoDict
+from src.database.schema import INIT_SQL
 
 
 @pytest.fixture
@@ -245,7 +244,12 @@ class TestComputeCircuitFrequencies:
         result = compute_circuit_frequencies(temp_db)
 
         assert not result.empty
-        assert list(result.columns) == ["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"]
+        assert list(result.columns) == [
+            "circuito_json",
+            "concepto",
+            "frecuencia",
+            "es_mas_frecuente",
+        ]
 
         # Concepto A: 5 expedientes, 3 circuits
         # Circuit 1 (MDE -> D1 -> D2 -> D3): freq 3
@@ -273,7 +277,12 @@ class TestComputeCircuitFrequencies:
 
         result = compute_circuit_frequencies(temp_db)
         assert result.empty
-        assert list(result.columns) == ["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"]
+        assert list(result.columns) == [
+            "circuito_json",
+            "concepto",
+            "frecuencia",
+            "es_mas_frecuente",
+        ]
 
     def test_compute_circuit_frequencies_sorts_by_concepto_and_freq(self, temp_db):
         result = compute_circuit_frequencies(temp_db)
@@ -324,11 +333,28 @@ class TestIdentifyModalCircuits:
 
     def test_identify_modal_circuits_tie_handling(self, temp_db):
         # Create a tie scenario by manually creating freq_df with tie
-        freq_df = pd.DataFrame([
-            {"circuito_json": json.dumps(["MDE", "D1", "D2"]), "concepto": "TieConcepto", "frecuencia": 5, "es_mas_frecuente": False},
-            {"circuito_json": json.dumps(["MDE", "D1", "D3"]), "concepto": "TieConcepto", "frecuencia": 5, "es_mas_frecuente": False},
-            {"circuito_json": json.dumps(["MDE", "D4"]), "concepto": "TieConcepto", "frecuencia": 2, "es_mas_frecuente": False},
-        ])
+        freq_df = pd.DataFrame(
+            [
+                {
+                    "circuito_json": json.dumps(["MDE", "D1", "D2"]),
+                    "concepto": "TieConcepto",
+                    "frecuencia": 5,
+                    "es_mas_frecuente": False,
+                },
+                {
+                    "circuito_json": json.dumps(["MDE", "D1", "D3"]),
+                    "concepto": "TieConcepto",
+                    "frecuencia": 5,
+                    "es_mas_frecuente": False,
+                },
+                {
+                    "circuito_json": json.dumps(["MDE", "D4"]),
+                    "concepto": "TieConcepto",
+                    "frecuencia": 2,
+                    "es_mas_frecuente": False,
+                },
+            ]
+        )
 
         result = identify_modal_circuits(freq_df, min_samples=2)
 
@@ -340,7 +366,9 @@ class TestIdentifyModalCircuits:
         assert "D2" in _json_to_circuit(modal.iloc[0]["circuito_json"])
 
     def test_identify_modal_circuits_empty_df(self, temp_db):
-        empty_df = pd.DataFrame(columns=["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"])
+        empty_df = pd.DataFrame(
+            columns=["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"]
+        )
         result = identify_modal_circuits(empty_df)
         assert result.empty
 
@@ -368,7 +396,9 @@ class TestPersistCircuitFrequencies:
         assert modal_count == 2  # One modal per concepto
 
     def test_persist_circuit_frequencies_empty(self, temp_db):
-        empty_df = pd.DataFrame(columns=["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"])
+        empty_df = pd.DataFrame(
+            columns=["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"]
+        )
         inserted = persist_circuit_frequencies(empty_df, temp_db)
         assert inserted == 0
 
@@ -397,7 +427,12 @@ class TestRunFullCircuitAnalysis:
         result = run_full_circuit_analysis(temp_db)
 
         assert not result.empty
-        assert list(result.columns) == ["circuito_json", "concepto", "frecuencia", "es_mas_frecuente"]
+        assert list(result.columns) == [
+            "circuito_json",
+            "concepto",
+            "frecuencia",
+            "es_mas_frecuente",
+        ]
 
         # Check modal circuits identified
         # Default min_samples=5 from config, so only Concepto A (5 expedientes) gets modal
