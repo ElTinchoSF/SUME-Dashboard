@@ -118,21 +118,55 @@ cat config.yaml  # Revisar rutas, facultad, año, etc.
 # Inicializar base de datos
 python -m src.pipeline run --phase init-db
 
-# Fase 1: Scraping semestre 1 (ene-jun) con validación
-python -m src.pipeline run --phase scraper --semester 1
+# Scraping directo con src.sume_scraper (recomendado)
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --skip-existing
 
-# Fase 2: Scraping semestre 2 (jul-dic)
-python -m src.pipeline run --phase scraper --semester 2
-
-# Fase 3: Análisis completo (circuitos + estadísticas)
+# Análisis completo (circuitos + estadísticas)
 python -m src.pipeline run --phase analyzer
 
-# Fase 4: Generar informe ISO 9001
+# Generar informe
 python -m src.pipeline run --phase reporter --output reports/iso9001.md --format markdown
-
-# Todo en uno
-python -m src.pipeline run --phase all
 ```
+
+### Scraping de expedientes
+
+```bash
+# Scraping completo de un año (con skip de existentes — rápido)
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --skip-existing
+
+# Scraping por trimestre
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-03-31 --skip-existing
+python -m src.sume_scraper --faculty FBCB --date-from 2025-04-01 --date-to 2025-06-30 --skip-existing
+python -m src.sume_scraper --faculty FBCB --date-from 2025-07-01 --date-to 2025-09-30 --skip-existing
+python -m src.sume_scraper --faculty FBCB --date-from 2025-10-01 --date-to 2025-12-31 --skip-existing
+
+# Scraping completo (re-fetch todo, sobreescribe existentes)
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31
+
+# Scraping con validación post-ejecución
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --skip-existing --validate
+
+# Testing: solo primeras 5 páginas
+python -m src.sume_scraper --faculty FBCB --max-pages 5
+
+# Logging detallado
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --skip-existing -v
+```
+
+**Flags disponibles:**
+
+| Flag | Descripción |
+|------|-------------|
+| `--faculty` | Código de la unidad académica (FBCB, FCA, FCV, etc.) — **obligatorio** |
+| `--date-from` | Fecha de inicio (YYYY-MM-DD o DD/MM/YYYY) |
+| `--date-to` | Fecha de fin (YYYY-MM-DD o DD/MM/YYYY) |
+| `--skip-existing` | No fetch detail pages de expedientes ya en la DB — **mucho más rápido** |
+| `--validate` | Ejecutar validaciones después del scraping |
+| `--clean` | Limpiar DB antes de scraping (preserva asuntos) |
+| `--clean-all` | Limpiar DB y asuntos antes de scraping |
+| `--max-pages` | Limitar páginas a procesar (para testing) |
+| `--db-path` | Ruta a la DB (default: `data/sume.db`) |
+| `-v, --verbose` | Logging detallado (DEBUG level) |
 
 ### Dashboard interactivo
 
@@ -211,7 +245,7 @@ pytest tests/test_performance.py -v -m benchmark
 
 | Módulo | Cobertura mínima |
 |--------|------------------|
-| `src.scraper.*` | ≥ 80% |
+| `src.sume_scraper.*` | ≥ 80% |
 | `src.analysis.*` | ≥ 80% |
 | `src.normalizer` | ≥ 80% |
 
@@ -263,13 +297,16 @@ SUME-Dashboard/
 │   │   ├── schema.py              # SQL DDL: 4 tablas + índices
 │   │   ├── models.py              # TypedDicts: Expediente, Movimiento, Dependencia, Circuito
 │   │   └── connection.py          # Singleton SQLite, transacciones, row_factory
-│   ├── scraper/
+│   ├── sume_scraper/
 │   │   ├── __init__.py
-│   │   ├── config.py              # Config específica scraper
+│   │   ├── config.py              # ScraperConfig (dataclass) + SelectorConfig
 │   │   ├── client.py              # HTTP client: retry, rate limit, 429, logging
 │   │   ├── parser.py              # parse_listing_page, parse_detail_page, parse_movimientos
 │   │   ├── normalizer.py          # normalize(), load_rules(), 5 reglas + overrides
-│   │   └── main.py                # Orquestador: búsqueda, paginación, persistencia, validación
+│   │   ├── scraper.py             # SUMEScraper: orquestador con --skip-existing
+│   │   ├── validator.py           # ScrapingValidator: validación post-scraping
+│   │   ├── cli.py                 # CLI: argparse con todos los flags
+│   │   └── __main__.py            # Entry point para python -m src.sume_scraper
 │   ├── analysis/
 │   │   ├── __init__.py
 │   │   ├── circuits.py            # reconstruct_circuit, compute_frequencies, identify_modal
@@ -352,14 +389,14 @@ ruff check src/ tests/
 
 ```bash
 # Ver logs detallados
-python -m src.pipeline run --phase scraper --semester 1 2>&1 | tee scraper.log
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --skip-existing -v 2>&1 | tee scraper.log
 
 # Inspeccionar snapshots HTML
 ls data/raw/
-cat data/raw/detail_12345.html
+cat data/raw/detail_FBCB-1234567-25.html
 
 # Ver reporte de validación
-# Se imprime en stdout al finalizar el scraper
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-12-31 --skip-existing --validate
 ```
 
 ---
@@ -501,13 +538,13 @@ Esto garantiza **trazabilidad completa**: mismo commit + mismos datos = mismo ha
 El diseño incluye gates de validación manual entre fases:
 
 ```bash
-# 1. Semestre 1
-python -m src.pipeline run --phase scraper --semester 1
+# 1. Scraping semestre 1 (con skip de existentes)
+python -m src.sume_scraper --faculty FBCB --date-from 2025-01-01 --date-to 2025-06-30 --skip-existing --validate
 # Revisar: validation report (duplicados, campos faltantes, expedientes sin movimientos)
 # Refinar: config/normalization_rules.yaml si hay dependencias no normalizadas
 
-# 2. Semestre 2
-python -m src.pipeline run --phase scraper --semester 2
+# 2. Scraping semestre 2
+python -m src.sume_scraper --faculty FBCB --date-from 2025-07-01 --date-to 2025-12-31 --skip-existing --validate
 # Revisar: validation report consolidado
 
 # 3. Analizador completo
