@@ -686,14 +686,23 @@ def ensure_asuntos_populated() -> bool:
     """
     db = get_connection()
 
-    # Check if asuntos table has data
-    cursor = db.execute("SELECT COUNT(*) FROM asuntos")
-    count = cursor.fetchone()[0]
+    # Check if asuntos table exists and has data
+    try:
+        cursor = db.execute("SELECT COUNT(*) FROM asuntos")
+        count = cursor.fetchone()[0]
+    except Exception:
+        # Table doesn't exist yet — not critical, will be populated later
+        logger.info("asuntos table not found — will be created when needed")
+        return False
 
     if count == 0:
         # Table is empty, populate from patterns
-        from src.analysis.asuntos import populate_asuntos_table
-        populate_asuntos_table()
+        try:
+            from src.analysis.asuntos import populate_asuntos_table
+            populate_asuntos_table()
+        except Exception as e:
+            logger.warning("Could not populate asuntos: %s", e)
+            return False
         return True
 
     return True

@@ -16,6 +16,7 @@ import streamlit as st
 
 from src.dashboard.logging_config import setup_logging
 from src.dashboard.errors import render_page_error
+from src.dashboard.validation import validate_database
 from src.dashboard.components.filters import render_global_filters_sidebar
 from src.dashboard.pages.overview import render_overview_page
 from src.dashboard.pages.conceptos import render_conceptos_page
@@ -312,6 +313,19 @@ def main() -> None:
     # Sidebar
     with st.sidebar:
         st.markdown('<p class="sidebar-nav-title">📊 Navegación</p>', unsafe_allow_html=True)
+
+        # Database health check (cached per session)
+        if "db_health" not in st.session_state:
+            st.session_state["db_health"] = validate_database()
+
+        health = st.session_state["db_health"]
+        if health.errors:
+            st.error(f"⚠️ DB: {len(health.errors)} error(es)")
+            for issue in health.errors[:3]:
+                st.caption(f"❌ {issue.message}")
+        elif health.warnings:
+            st.warning(f"DB: {len(health.warnings)} advertencia(s)")
+        # No message if healthy — clean sidebar
 
     # Page routing via radio buttons (between Navegación and Filtros Globales)
     page = st.sidebar.radio(
