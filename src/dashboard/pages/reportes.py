@@ -12,6 +12,7 @@ Report generation UI with:
 import streamlit as st
 import subprocess
 import sys
+import re
 import tempfile
 import os
 from pathlib import Path
@@ -133,11 +134,12 @@ def _generate_report(format_option: str, conceptos: Optional[list[str]], scope_l
     }
     fmt = format_map.get(format_option, "markdown")
 
-    # Build output filename
+    # Build output filename (sanitize scope_label for filesystem safety)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     ext_map = {"markdown": "md", "pdf": "pdf", "excel": "xlsx"}
     ext = ext_map.get(fmt, "md")
-    output_filename = f"reporte_iso9001_{scope_label}_{timestamp}.{ext}"
+    safe_scope = re.sub(r'[^a-zA-Z0-9_-]', '_', scope_label).strip('_')
+    output_filename = f"reporte_iso9001_{safe_scope}_{timestamp}.{ext}"
 
     settings = get_settings()
     output_dir = Path(settings.reporter.output_dir)
