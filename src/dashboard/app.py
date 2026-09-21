@@ -17,6 +17,7 @@ import streamlit as st
 from src.dashboard.logging_config import setup_logging
 from src.dashboard.errors import render_page_error
 from src.dashboard.validation import validate_database
+from src.dashboard.auth import require_auth
 from src.dashboard.components.filters import render_global_filters_sidebar
 from src.dashboard.pages.overview import render_overview_page
 from src.dashboard.pages.conceptos import render_conceptos_page
@@ -33,6 +34,9 @@ def main() -> None:
     # Ensure logging is configured (idempotent)
     global logger
     logger = setup_logging()
+
+    # Authentication gate — shows login page if not authenticated
+    require_auth()
 
     # Set wide layout to maximize content area
     st.set_page_config(

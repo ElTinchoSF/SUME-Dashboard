@@ -72,6 +72,16 @@ class DashboardConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SUME_DASHBOARD_")
 
 
+class AuthConfig(BaseSettings):
+    """Authentication configuration."""
+
+    enabled: bool = True
+    password: str = ""  # Set via SUME_AUTH_PASSWORD env var
+    session_hours: int = 8  # Session duration in hours
+
+    model_config = SettingsConfigDict(env_prefix="SUME_AUTH_")
+
+
 class ReporterConfig(BaseSettings):
     """Reporter configuration."""
 
@@ -92,6 +102,7 @@ class Settings(BaseSettings):
     analyzer: AnalyzerConfig = Field(default_factory=AnalyzerConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     reporter: ReporterConfig = Field(default_factory=ReporterConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     model_config = SettingsConfigDict(
         yaml_file="config.yaml",
